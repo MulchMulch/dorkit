@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dork It</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&family=Baloo+2:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    width: 100%;
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: none;
+    background: linear-gradient(135deg, #FF5FA2 0%, #FF9F45 55%, #FFD93D 100%);
+    background-image:
+      radial-gradient(circle, rgba(255,255,255,0.35) 2px, transparent 2.5px),
+      linear-gradient(135deg, #FF5FA2 0%, #FF9F45 55%, #FFD93D 100%);
+    background-size: 26px 26px, 100% 100%;
+    font-family: 'Baloo 2', sans-serif;
+    color: #3B230F;
+  }
+  body {
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .dork-app { width: 100%; max-width: 640px; user-select: none; -webkit-user-select: none; }
+
+  .dork-header { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; margin-bottom: 28px; }
+  .dork-readout { justify-self: start; }
+  .dork-title { justify-self: center; }
+  .dork-mute { justify-self: end; }
+  .dork-readout {
+    font-family: 'Fredoka', sans-serif; font-weight: 700;
+    background: #FFF8ED; border: 3px solid #3B230F; box-shadow: 3px 3px 0 rgba(59,35,15,0.3);
+    padding: 6px 12px; border-radius: 16px; font-size: clamp(14px, 3.2vw, 18px);
+  }
+  .dork-readout b { color: #FF5FA2; }
+  .dork-title {
+    font-family: 'Fredoka', sans-serif; font-weight: 700; font-size: clamp(19px, 4.5vw, 27px);
+    color: #FFF8ED; text-shadow: 2px 2px 0 #3B230F;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .dork-wiggle { display: inline-block; animation: wiggle 1.6s ease-in-out infinite; }
+  .dork-mute {
+    background: #FFF8ED; border: 3px solid #3B230F; box-shadow: 3px 3px 0 rgba(59,35,15,0.3);
+    border-radius: 16px; padding: 7px 10px; cursor: pointer; font-size: clamp(16px, 3.8vw, 22px);
+  }
+
+  .dork-relative {
+    position: relative;
+    min-height: clamp(280px, 86vmin, 700px);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .dork-pod {
+    position: relative;
+    width: 100%;
+    max-width: clamp(260px, 90vmin, 700px);
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .dork-pod.wobble { animation: wobbleFail 0.5s ease; }
+
+  .dork-confirm-wrap {
+    position: relative;
+    width: clamp(240px, 82vmin, 640px);
+    height: clamp(240px, 82vmin, 640px);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .dork-ring {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    transform: rotate(-90deg); pointer-events: none;
+  }
+  .dork-ring-fg {
+    fill: none; stroke: #4ADE9C; stroke-width: 6; stroke-linecap: round;
+    transition: stroke-dashoffset 60ms linear, stroke 200ms ease;
+  }
+
+  .dork-confirm {
+    position: relative;
+    width: 88%;
+    height: 88%;
+    border-radius: 9999px;
+    background: #FFF8ED;
+    border-style: solid;
+    border-width: clamp(6px, 1.6vmin, 16px);
+    border-color: #3B230F;
+    color: #3B230F;
+    font-family: 'Fredoka', sans-serif; font-weight: 700;
+    font-size: clamp(22px, 6vmin, 44px);
+    letter-spacing: 0.5px;
+    line-height: 1.25;
+    padding: 0 6%;
+    cursor: default;
+    box-shadow: 10px 10px 0 rgba(59,35,15,0.35);
+    transition: transform 90ms ease, border-color 150ms ease, box-shadow 150ms ease;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .dork-confirm.playing { cursor: pointer; }
+  .dork-confirm.idle-bounce { animation: bounceIdle 1.8s ease-in-out infinite; }
+  .dork-confirm.pressed { transform: translate(5px, 5px); }
+  .dork-confirm.success { animation: popIn 0.3s ease; }
+  .dork-confirm.long-label { font-size: clamp(20px, 5.4vmin, 40px); overflow-wrap: anywhere; word-break: normal; }
+  .dork-confirm.combo {
+    box-shadow: 0 0 14px 6px rgba(255,215,0,0.45), 10px 10px 0 rgba(59,35,15,0.35);
+    animation: comboGlow 1s ease-in-out infinite alternate;
+  }
+
+  .confetti-piece { position: absolute; left: 50%; top: 50%; font-size: clamp(16px, 3vmin, 28px); pointer-events: none; }
+
+  .dork-overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    padding: 0 8%; border-radius: 24px; background: rgba(255,248,237,0.97);
+    z-index: 20;
+  }
+  .dork-overlay-title {
+    font-family: 'Fredoka', sans-serif; font-weight: 700; font-size: clamp(32px, 7vw, 44px); color: #FF5FA2;
+    margin-bottom: 10px; display: flex; align-items: center; gap: 8px;
+  }
+  .dork-overlay p {
+    color: #7A5A38; font-family: 'Baloo 2', sans-serif; font-weight: 600;
+    font-size: clamp(16px, 3.8vw, 21px); max-width: 420px; margin: 0 0 20px; line-height: 1.5;
+  }
+  .dork-btn {
+    font-family: 'Fredoka', sans-serif; font-weight: 700; background: #4ADE9C; color: #1F3B2C;
+    border: 4px solid #3B230F; box-shadow: 5px 5px 0 rgba(59,35,15,0.35);
+    padding: 14px 34px; border-radius: 999px; font-size: clamp(16px, 3.8vw, 21px); cursor: pointer; margin-bottom: 16px;
+  }
+  .dork-highscore { font-family: 'Fredoka', sans-serif; font-weight: 700; color: #7A5A38; font-size: clamp(14px, 3.2vw, 18px); margin-top: 8px; }
+
+  .dork-gameover-title {
+    font-family: 'Fredoka', sans-serif; font-weight: 700; font-size: clamp(30px, 7vw, 42px); color: #FF5C5C; margin-bottom: 8px;
+  }
+  .dork-gameover-score { font-family: 'Fredoka', sans-serif; font-weight: 700; font-size: clamp(34px, 8vw, 48px); color: #3B230F; margin-bottom: 4px; }
+  .dork-gameover-sub { font-family: 'Baloo 2', sans-serif; font-weight: 600; color: #7A5A38; font-size: clamp(14px, 3.2vw, 18px); margin-bottom: 24px; }
+
+  @keyframes wiggle {
+    0%, 100% { transform: rotate(-6deg); }
+    50% { transform: rotate(6deg); }
+  }
+  @keyframes bounceIdle {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(-6px) scale(1.02); }
+  }
+  @keyframes popIn {
+    0% { transform: scale(0.7); }
+    60% { transform: scale(1.12); }
+    100% { transform: scale(1); }
+  }
+  @keyframes wobbleFail {
+    0%, 100% { transform: rotate(0deg) translateX(0); }
+    20% { transform: rotate(-8deg) translateX(-6px); }
+    40% { transform: rotate(7deg) translateX(6px); }
+    60% { transform: rotate(-5deg) translateX(-4px); }
+    80% { transform: rotate(4deg) translateX(4px); }
+  }
+  @keyframes confettiPop {
+    0% { transform: translate(0,0) rotate(0deg) scale(1); opacity: 1; }
+    100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 0; }
+  }
+  @keyframes comboGlow {
+    from { box-shadow: 0 0 10px 4px rgba(255,215,0,0.4), 10px 10px 0 rgba(59,35,15,0.35); }
+    to   { box-shadow: 0 0 26px 12px rgba(255,215,0,0.75), 10px 10px 0 rgba(59,35,15,0.35); }
+  }
+</style>
+</head>
+<body>
+
+<div class="dork-app">
+  <div class="dork-header">
+    <div class="dork-readout">SCORE <b id="scoreReadout">00</b></div>
+    <div class="dork-title"><span class="dork-wiggle">🎉</span> DORK IT</div>
+    <button class="dork-mute" id="muteBtn" aria-label="Mute">🔊</button>
+  </div>
+
+  <div class="dork-relative">
+    <div class="dork-pod" id="pod">
+      <div class="dork-confirm-wrap">
+        <svg class="dork-ring" viewBox="0 0 100 100">
+          <circle class="dork-ring-fg" id="timerRing" cx="50" cy="50" r="47"
+                  stroke-dasharray="295.31" stroke-dashoffset="0"></circle>
+        </svg>
+        <button class="dork-confirm idle-bounce" id="confirmBtn">READY?</button>
+      </div>
+    </div>
+
+    <div class="dork-overlay" id="idleOverlay">
+      <div class="dork-overlay-title"><span class="dork-wiggle">🤪</span> DORK IT</div>
+      <p>Hi Marissa, happy birthday! I couldn't get you a Bop It, so I got you the next best thing, a Dork It. As you complete each command, click or hit the space bar to move onto the next one. Good luck, and don't get dorked!</p>
+      <button class="dork-btn" id="startBtn">START!</button>
+      <div class="dork-highscore" id="idleHighScore" style="display:none;"></div>
+    </div>
+
+    <div class="dork-overlay" id="gameoverOverlay" style="display:none;">
+      <div class="dork-gameover-title">DORKED IT! 🤪</div>
+      <div class="dork-gameover-score" id="finalScore">0</div>
+      <div class="dork-gameover-sub" id="gameoverSub">HIGH SCORE: 0</div>
+      <button class="dork-btn" id="playAgainBtn">GO AGAIN</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var META = {
+    SWIPE:            { label: "SWIPE IT",              color: "#4DC9FF", say: "Swipe it!", confetti: ["👋","💨","➡️"] },
+    WILLY:            { label: "WET WILLY IT",          color: "#34E4C0", say: "Wet willy it!", confetti: ["👂","💦","😝"] },
+    KISS:             { label: "KISS IT",               color: "#FF5FA2", say: "Kiss it!", confetti: ["💋","😘","💕"] },
+    HUMP:             { label: "HUMP IT",                color: "#B980FF", say: "Hump it!", confetti: ["🐰","💨","😆"] },
+    TOES:             { label: "HOLD TOES WITH IT",     color: "#4ADE9C", say: "Hold toes with it!", confetti: ["🦶","🤝","😄"] },
+    HUG:              { label: "HUG IT",                 color: "#FF9F45", say: "Hug it!", confetti: ["🤗","💞","🥰"] },
+    TWIST:            { label: "TWIST IT",               color: "#B6FF3D", say: "Twist it!", confetti: ["🌀","💃","😵"] },
+    SQUEEZE:          { label: "SQUEEZE IT",             color: "#FF7A5C", say: "Squeeze it!", confetti: ["🤏","🫂","😖"] },
+    SPANK:            { label: "SPANK IT",               color: "#FF5C5C", say: "Spank it!", confetti: ["👋","💥","😳"] },
+    TICKLE:           { label: "TICKLE IT",              color: "#FFD93D", say: "Tickle it!", confetti: ["🤣","✋","😂"] },
+    NOOGIE:           { label: "NOOGIE IT",              color: "#C97C3D", say: "Noogie it!", confetti: ["👊","😆","🤕"] },
+    PINCH:            { label: "PINCH IT",               color: "#FF4FD8", say: "Pinch it!", confetti: ["🤏","😖","👀"] },
+    POKE:             { label: "POKE IT",                color: "#2EC4B6", say: "Poke it!", confetti: ["👉","😲","😜"] },
+    JORK:             { label: "JORK IT",                color: "#8A5CFF", say: "Jork it!", confetti: ["🤪","⚡","❓"] },
+    LICK:             { label: "LICK IT",                color: "#FF3D71", say: "Lick it!", confetti: ["👅","🍭","😋"] },
+    BOOM:             { label: "BOOM IT",                color: "#FF6B35", say: "Boom it!", confetti: ["💥","🎆","🤯"] },
+    BULLY:            { label: "BULLY IT",                color: "#6B4CFF", say: "Bully it!", confetti: ["😈","👊","💢"] },
+    BOOP:             { label: "BOOP IT",                 color: "#5CD6FF", say: "Boop it!", confetti: ["👆","🐽","😊"] },
+    MOTORBOAT:        { label: "MOTORBOAT IT",           color: "#29B6F6", say: "Motorboat it!", confetti: ["🚤","💦","😂"] },
+    NIBBLE:           { label: "NIBBLE IT",              color: "#E08D79", say: "Nibble it!", confetti: ["🐹","🦷","😬"] },
+    RASPBERRY:        { label: "RASPBERRY IT",           color: "#E6398F", say: "Raspberry it!", confetti: ["🍓","😋","✨"] },
+    CLOCKWISE:        { label: "CLOCKWISE IT",           color: "#FFA400", say: "Clockwise it!", confetti: ["🔄","⏩","🌀"] },
+    COUNTERCLOCKWISE: { label: "COUNTERCLOCKWISE IT",    color: "#00C2CB", say: "Counterclockwise it!", confetti: ["🔄","⏪","🌀"] },
+    COMBO:            { label: "HUMP IT WHILE KISSING THE BACK OF ITS NECK AND TWISTING ITS NIPPLES AND HOLDING ITS TOES", color: "#FFD700", say: "Hump it, while kissing the back of its neck, and twisting its nipples and holding its toes!", confetti: ["🎆","🌟","💛","🎉"] }
+  };
+  var REGULAR_ACTIONS = Object.keys(META).filter(function (k) { return k !== 'COMBO'; });
+  var RING_CIRCUMFERENCE = 2 * Math.PI * 47; // ~295.31
+
+  var el = {
+    scoreReadout: document.getElementById('scoreReadout'),
+    muteBtn: document.getElementById('muteBtn'),
+    timerRing: document.getElementById('timerRing'),
+    pod: document.getElementById('pod'),
+    confirmBtn: document.getElementById('confirmBtn'),
+    idleOverlay: document.getElementById('idleOverlay'),
+    gameoverOverlay: document.getElementById('gameoverOverlay'),
+    startBtn: document.getElementById('startBtn'),
+    playAgainBtn: document.getElementById('playAgainBtn'),
+    idleHighScore: document.getElementById('idleHighScore'),
+    finalScore: document.getElementById('finalScore'),
+    gameoverSub: document.getElementById('gameoverSub')
+  };
+
+  var state = {
+    gameState: 'idle',
+    currentAction: null,
+    score: 0,
+    highScore: 0,
+    muted: false,
+    attempted: false,
+    rafId: null,
+    startTime: 0,
+    duration: 3400,
+    speedMultiplier: 1
+  };
+
+  try {
+    var saved = localStorage.getItem('dorkit-highscore');
+    if (saved) { state.highScore = JSON.parse(saved); }
+  } catch (e) {}
+
+  // ---------- audio ----------
+  var audioCtx = null;
+  function getCtx() {
+    if (!audioCtx) {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) audioCtx = new AC();
+    }
+    return audioCtx;
+  }
+  function beep(freq, dur, type, vol) {
+    try {
+      var ctx = getCtx();
+      if (!ctx) return;
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      gain.gain.value = vol || 0.18;
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start();
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+      osc.stop(ctx.currentTime + dur);
+    } catch (e) {}
+  }
+  function successSound() { beep(1046, 0.1, 'square', 0.16); }
+  function failSound() {
+    beep(220, 0.3, 'sawtooth', 0.2);
+    setTimeout(function () { beep(140, 0.4, 'sawtooth', 0.18); }, 90);
+  }
+  function speak(text) {
+    if (state.muted) return;
+    try {
+      if (!window.speechSynthesis) return;
+      window.speechSynthesis.cancel();
+      var u = new SpeechSynthesisUtterance(text);
+      u.rate = 1.1; u.pitch = 1.15;
+      window.speechSynthesis.speak(u);
+    } catch (e) {}
+  }
+
+  function popConfetti(action) {
+    var meta = META[action] || {};
+    var pool = meta.confetti && meta.confetti.length ? meta.confetti : ["🎉", "✨"];
+    for (var i = 0; i < 10; i++) {
+      var angle = Math.random() * Math.PI * 2;
+      var dist = 70 + Math.random() * 50;
+      var dx = Math.cos(angle) * dist;
+      var dy = Math.sin(angle) * dist;
+      var rot = (Math.random() - 0.5) * 240;
+      var span = document.createElement('span');
+      span.className = 'confetti-piece';
+      span.textContent = pool[Math.floor(Math.random() * pool.length)];
+      span.style.setProperty('--dx', dx + 'px');
+      span.style.setProperty('--dy', dy + 'px');
+      span.style.setProperty('--rot', rot + 'deg');
+      span.style.animation = 'confettiPop 0.65s ease-out forwards';
+      el.pod.appendChild(span);
+      (function (node) {
+        setTimeout(function () { node.remove(); }, 700);
+      })(span);
+    }
+  }
+
+  function pickOneAction(excluded) {
+    var action;
+    do {
+      action = REGULAR_ACTIONS[Math.floor(Math.random() * REGULAR_ACTIONS.length)];
+    } while (action === excluded && REGULAR_ACTIONS.length > 1);
+    return action;
+  }
+
+  function pickDistinctActions(count, prevAction) {
+    var pool = REGULAR_ACTIONS.slice();
+    if (prevAction && pool.length > 1) {
+      pool = pool.filter(function (action) { return action !== prevAction; });
+    }
+
+    var picked = [];
+    while (picked.length < count && pool.length) {
+      var index = Math.floor(Math.random() * pool.length);
+      picked.push(pool.splice(index, 1)[0]);
+    }
+
+    return picked;
+  }
+
+  function pickAction(prevAction) {
+    var roll = Math.random();
+
+    // 50% single, 30% double, 16% triple, 4% long command.
+    if (roll < 0.50) {
+      return pickOneAction(prevAction);
+    }
+    if (roll < 0.80) {
+      return pickDistinctActions(2, prevAction);
+    }
+    if (roll < 0.96) {
+      return pickDistinctActions(3, prevAction);
+    }
+    return 'COMBO';
+  }
+
+  function render() {
+    el.scoreReadout.textContent = String(state.score).padStart(2, '0');
+    el.muteBtn.textContent = state.muted ? '🔇' : '🔊';
+
+    var playing = state.gameState === 'playing';
+    el.confirmBtn.classList.toggle('playing', playing);
+    el.confirmBtn.classList.toggle('idle-bounce', !playing);
+    el.confirmBtn.classList.toggle('combo', playing && state.currentAction === 'COMBO');
+
+    if (playing && state.currentAction) {
+      if (Array.isArray(state.currentAction)) {
+        var labels = state.currentAction.map(function (key) { return META[key].label; });
+        el.confirmBtn.textContent = labels.join(' AND ');
+        el.confirmBtn.style.borderColor = '#3B230F';
+        el.confirmBtn.classList.remove('long-label');
+      } else {
+        var meta = META[state.currentAction];
+        el.confirmBtn.textContent = meta.label;
+        el.confirmBtn.style.borderColor = '#3B230F';
+        el.confirmBtn.classList.remove('long-label');
+      }
+    } else {
+      el.confirmBtn.textContent = 'READY?';
+      el.confirmBtn.style.borderColor = '#3B230F';
+      el.confirmBtn.classList.remove('long-label');
+      el.timerRing.style.strokeDashoffset = 0;
+    }
+
+    el.idleOverlay.style.display = state.gameState === 'idle' ? 'flex' : 'none';
+    el.gameoverOverlay.style.display = state.gameState === 'gameover' ? 'flex' : 'none';
+    if (state.highScore > 0) {
+      el.idleHighScore.style.display = 'block';
+      el.idleHighScore.textContent = 'HIGH SCORE: ' + state.highScore;
+    }
+  }
+
+  function clearTimer() {
+    if (state.rafId) cancelAnimationFrame(state.rafId);
+  }
+
+  function loop() {
+    var now = performance.now();
+    var elapsed = now - state.startTime;
+    var p = Math.max(0, 1 - elapsed / state.duration);
+    el.timerRing.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - p));
+    el.timerRing.style.stroke = p > 0.5 ? '#4ADE9C' : (p > 0.22 ? '#FFD93D' : '#FF5C5C');
+    if (p <= 0) { handleFail(); return; }
+    state.rafId = requestAnimationFrame(loop);
+  }
+
+  function nextRound(nextScore) {
+    state.attempted = false;
+    var action = pickAction(
+      Array.isArray(state.currentAction) ? state.currentAction[state.currentAction.length - 1] : state.currentAction
+    );
+    state.currentAction = action;
+
+    var count = Array.isArray(action) ? action.length : (action === 'COMBO' ? 4 : 1);
+    // Exact round durations: single 3s, double 4s, triple 5s, long 6s.
+    var baseDuration = action === 'COMBO' ? 4000 : (count === 3 ? 3500 : (count === 2 ? 3000 : 2500));
+    state.duration = baseDuration * state.speedMultiplier;
+    state.startTime = performance.now();
+
+    var sayText;
+    if (Array.isArray(action)) {
+      sayText = action.map(function (key) { return META[key].say.replace(/!$/, ''); }).join(' and ') + '!';
+    } else {
+      sayText = META[action].say;
+    }
+    speak(sayText);
+
+    clearTimer();
+    render();
+    state.rafId = requestAnimationFrame(loop);
+  }
+
+  function handleFail() {
+    if (state.gameState !== 'playing') return;
+    clearTimer();
+    state.gameState = 'gameover';
+    el.pod.classList.add('wobble');
+    setTimeout(function () { el.pod.classList.remove('wobble'); }, 500);
+    failSound();
+    speak('Dorked it! Game over!');
+    var isNewHigh = false;
+    if (state.score > state.highScore) {
+      state.highScore = state.score;
+      isNewHigh = true;
+      try { localStorage.setItem('dorkit-highscore', JSON.stringify(state.highScore)); } catch (e) {}
+    }
+    el.finalScore.textContent = state.score;
+    el.gameoverSub.textContent = isNewHigh ? 'NEW HIGH SCORE!' : ('HIGH SCORE: ' + state.highScore);
+    render();
+  }
+
+  function handleConfirm() {
+    if (state.gameState !== 'playing') return;
+    if (state.attempted) return;
+    state.attempted = true;
+    clearTimer();
+    successSound();
+    popConfetti(Array.isArray(state.currentAction) ? state.currentAction[0] : state.currentAction);
+    el.confirmBtn.classList.add('success', 'pressed');
+    setTimeout(function () { el.confirmBtn.classList.remove('pressed'); }, 150);
+    setTimeout(function () { el.confirmBtn.classList.remove('success'); }, 350);
+    state.score += 1;
+    state.speedMultiplier *= 0.99; // 1% faster each success
+    var ns = state.score;
+    render();
+    setTimeout(function () { nextRound(ns); }, 260);
+  }
+
+  function startGame() {
+    state.score = 0;
+    state.speedMultiplier = 1;
+    state.gameState = 'playing';
+    render();
+    nextRound(0);
+  }
+
+  // ---------- controls ----------
+  el.startBtn.addEventListener('click', startGame);
+  el.playAgainBtn.addEventListener('click', startGame);
+  el.muteBtn.addEventListener('click', function () {
+    state.muted = !state.muted;
+    render();
+  });
+  // Tap/click ANYWHERE on the screen completes the action — not just the
+  // circle — so it's easy to keep up during fast, frantic play. We still
+  // let the mute button work normally without also triggering a round.
+  var lastTapTime = 0;
+  function isMuteTarget(target) {
+    return target === el.muteBtn || (el.muteBtn.contains && el.muteBtn.contains(target));
+  }
+  document.addEventListener('touchstart', function (e) {
+    if (state.gameState !== 'playing' || isMuteTarget(e.target)) return;
+    e.preventDefault();
+    lastTapTime = Date.now();
+    handleConfirm();
+  }, { passive: false });
+  document.addEventListener('click', function (e) {
+    if (state.gameState !== 'playing' || isMuteTarget(e.target)) return;
+    if (Date.now() - lastTapTime < 500) {
+      e.preventDefault();
+      return;
+    }
+    handleConfirm();
+  }, true);
+
+  window.addEventListener('keydown', function (e) {
+    if (state.gameState !== 'playing') return;
+    if (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Enter') {
+      e.preventDefault();
+      handleConfirm();
+    }
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
