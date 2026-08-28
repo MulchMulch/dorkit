@@ -13,24 +13,23 @@
     height: 100%;
     height: 100dvh;
     width: 100%;
-    position: fixed;
-    inset: 0;
     overflow: hidden;
     overscroll-behavior: none;
     touch-action: none;
-    background: transparent;
+    background: #FF9F45;
     font-family: 'Baloo 2', sans-serif;
     color: #3B230F;
   }
-  /* Oversized fixed background layer — deliberately bigger than the
-     viewport in every direction so that mobile browser chrome
-     (address bar / toolbar) showing or hiding during a swipe can
-     never reveal white space behind the page. */
-  html::before {
-    content: "";
+  /* Oversized fixed background element — deliberately bigger than the
+     viewport in every direction and pinned with position:fixed so that
+     iOS Safari's address bar/toolbar collapsing or expanding during a
+     swipe attempt can never reveal white space behind the page. This is
+     a real DOM element (not a pseudo-element) placed first in <body>
+     so it can't be affected by any ancestor positioning quirks. */
+  #bgFill {
     position: fixed;
-    top: -20vh; left: -20vw; right: -20vw; bottom: -20vh;
-    width: 140vw; height: 140vh;
+    top: -25vh; left: -25vw;
+    width: 150vw; height: 150vh;
     background: linear-gradient(135deg, #FF5FA2 0%, #FF9F45 55%, #FFD93D 100%);
     background-image:
       radial-gradient(circle, rgba(255,255,255,0.35) 2px, transparent 2.5px),
@@ -45,22 +44,20 @@
   }
   .dork-app { width: 100%; max-width: 640px; user-select: none; -webkit-user-select: none; }
 
-  .dork-header { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; margin-bottom: 28px; }
-  .dork-readout { justify-self: start; }
-  .dork-title { justify-self: center; }
-  .dork-mute { justify-self: end; }
+  .dork-header { display: flex; align-items: center; justify-content: center; margin-bottom: 18px; }
+  .dork-title {
+    font-family: 'Fredoka', sans-serif; font-weight: 700; font-size: clamp(34px, 10vw, 62px);
+    color: #FFF8ED; text-shadow: 3px 3px 0 #3B230F;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .dork-wiggle { display: inline-block; animation: wiggle 1.6s ease-in-out infinite; }
+  .dork-subbar { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; }
   .dork-readout {
     font-family: 'Fredoka', sans-serif; font-weight: 700;
     background: #FFF8ED; border: 3px solid #3B230F; box-shadow: 3px 3px 0 rgba(59,35,15,0.3);
     padding: 6px 12px; border-radius: 16px; font-size: clamp(14px, 3.2vw, 18px);
   }
   .dork-readout b { color: #FF5FA2; }
-  .dork-title {
-    font-family: 'Fredoka', sans-serif; font-weight: 700; font-size: clamp(19px, 4.5vw, 27px);
-    color: #FFF8ED; text-shadow: 2px 2px 0 #3B230F;
-    display: flex; align-items: center; gap: 6px;
-  }
-  .dork-wiggle { display: inline-block; animation: wiggle 1.6s ease-in-out infinite; }
   .dork-mute {
     background: #FFF8ED; border: 3px solid #3B230F; box-shadow: 3px 3px 0 rgba(59,35,15,0.3);
     border-radius: 16px; padding: 7px 10px; cursor: pointer; font-size: clamp(16px, 3.8vw, 22px);
@@ -123,7 +120,7 @@
   }
   .dork-confirm.playing { cursor: pointer; }
   .dork-confirm.idle-bounce { animation: bounceIdle 1.8s ease-in-out infinite; }
-  .dork-confirm.pressed { transform: translate(5px, 5px); }
+  .dork-confirm.pressed { transform: translate(5px, 5px); box-shadow: 5px 5px 0 rgba(59,35,15,0.35); }
   .dork-confirm.success { animation: popIn 0.3s ease; }
   .dork-confirm.long-label { font-size: clamp(20px, 5.4vmin, 40px); overflow-wrap: anywhere; word-break: normal; }
   .dork-confirm.combo {
@@ -196,11 +193,11 @@
 </head>
 <body>
 
+<div id="bgFill"></div>
+
 <div class="dork-app">
   <div class="dork-header">
-    <div class="dork-readout">SCORE <b id="scoreReadout">00</b></div>
     <div class="dork-title"><span class="dork-wiggle">🎉</span> DORK IT</div>
-    <button class="dork-mute" id="muteBtn" aria-label="Mute">🔊</button>
   </div>
 
   <div class="dork-relative">
@@ -216,7 +213,7 @@
 
     <div class="dork-overlay" id="idleOverlay">
       <div class="dork-overlay-title"><span class="dork-wiggle">🤪</span> DORK IT</div>
-      <p>Hi Marissa, happy birthday! I couldn't get you a Bop It, so I got you the next best thing, a Dork It. As you complete each command, click or hit the space bar to move onto the next one. Good luck, and don't get dorked!</p>
+      <p>Hi Marissa, happy birthday! I couldn't get you a Bop It, so I got you the next best thing, a Dork It. Good luck, and don't get dorked!</p>
       <button class="dork-btn" id="startBtn">START!</button>
       <div class="dork-highscore" id="idleHighScore" style="display:none;"></div>
     </div>
@@ -227,6 +224,11 @@
       <div class="dork-gameover-sub" id="gameoverSub">HIGH SCORE: 0</div>
       <button class="dork-btn" id="playAgainBtn">GO AGAIN</button>
     </div>
+  </div>
+
+  <div class="dork-subbar">
+    <div class="dork-readout">SCORE <b id="scoreReadout">00</b></div>
+    <button class="dork-mute" id="muteBtn" aria-label="Mute">🔊</button>
   </div>
 </div>
 
@@ -251,6 +253,7 @@
     BOOM:             { label: "BOOM IT",                color: "#FF6B35", say: "Boom it!", confetti: ["💥","🎆","🤯"] },
     BULLY:            { label: "BULLY IT",                color: "#6B4CFF", say: "Bully it!", confetti: ["😈","👊","💢"] },
     BOOP:             { label: "BOOP IT",                 color: "#5CD6FF", say: "Boop it!", confetti: ["👆","🐽","😊"] },
+    PET:              { label: "PET IT",                  color: "#A8D08D", say: "Pet it!", confetti: ["🐾","💕","😊"] },
     MOTORBOAT:        { label: "MOTORBOAT IT",           color: "#29B6F6", say: "Motorboat it!", confetti: ["🚤","💦","😂"] },
     NIBBLE:           { label: "NIBBLE IT",              color: "#E08D79", say: "Nibble it!", confetti: ["🐹","🦷","😬"] },
     RASPBERRY:        { label: "RASPBERRY IT",           color: "#E6398F", say: "Raspberry it!", confetti: ["🍓","😋","✨"] },
@@ -357,7 +360,7 @@
       var u = new SpeechSynthesisUtterance(text);
       // Deeper, punchier, more robotic delivery — closer to the classic
       // Bop It voice chip: low pitch, energetic clipped rate.
-      u.rate = 1.15; u.pitch = 0.72; u.volume = 1;
+      u.rate = 1.0; u.pitch = 0.85; u.volume = 1;
       if (cachedVoice) u.voice = cachedVoice;
       window.speechSynthesis.speak(u);
     } catch (e) {}
@@ -485,7 +488,7 @@
 
     var count = Array.isArray(action) ? action.length : (action === 'COMBO' ? 4 : 1);
     // Exact round durations: single 3s, double 4s, triple 5s, long 6s.
-    var baseDuration = action === 'COMBO' ? 4000 : (count === 3 ? 3500 : (count === 2 ? 3000 : 2500));
+    var baseDuration = action === 'COMBO' ? 4500 : (count === 3 ? 4000 : (count === 2 ? 3500 : 3000));
     state.duration = baseDuration * state.speedMultiplier;
     state.startTime = performance.now();
 
@@ -578,6 +581,15 @@
   // Fully block scroll/drag gestures everywhere on the page (not just
   // touchstart) so Safari's chrome never has a reason to collapse or
   // expand mid-swipe — that resize is what exposes white space.
+  // Defensive scroll reset for iOS Safari — in case any gesture slips
+  // through, snap the page back to (0,0) immediately so nothing can
+  // drift and expose space beyond the oversized background fill.
+  function resetScroll() { window.scrollTo(0, 0); }
+  window.addEventListener('load', resetScroll);
+  window.addEventListener('orientationchange', function () { setTimeout(resetScroll, 50); });
+  window.addEventListener('resize', resetScroll);
+  document.addEventListener('scroll', resetScroll, { passive: true });
+
   document.addEventListener('touchmove', function (e) {
     e.preventDefault();
   }, { passive: false });
