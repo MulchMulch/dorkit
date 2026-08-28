@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Dork It</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&family=Baloo+2:wght@500;700&display=swap" rel="stylesheet">
@@ -84,10 +84,13 @@
     width: clamp(240px, 82vmin, 640px);
     height: clamp(240px, 82vmin, 640px);
     display: flex; align-items: center; justify-content: center;
+    transform-origin: center;
   }
+  .dork-confirm-wrap.pulsing { animation: slowPulse 3.4s ease-in-out infinite; }
   .dork-ring {
     position: absolute; inset: 0; width: 100%; height: 100%;
     transform: rotate(-90deg); pointer-events: none;
+    z-index: 2;
   }
   .dork-ring-fg {
     fill: none; stroke: #4ADE9C; stroke-width: 6; stroke-linecap: round;
@@ -96,6 +99,7 @@
 
   .dork-confirm {
     position: relative;
+    z-index: 1;
     width: 88%;
     height: 88%;
     border-radius: 9999px;
@@ -164,6 +168,10 @@
     0%, 100% { transform: translateY(0) scale(1); }
     50% { transform: translateY(-6px) scale(1.02); }
   }
+  @keyframes slowPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.025); }
+  }
   @keyframes popIn {
     0% { transform: scale(0.7); }
     60% { transform: scale(1.12); }
@@ -197,7 +205,7 @@
 
   <div class="dork-relative">
     <div class="dork-pod" id="pod">
-      <div class="dork-confirm-wrap">
+      <div class="dork-confirm-wrap" id="confirmWrap">
         <svg class="dork-ring" viewBox="0 0 100 100">
           <circle class="dork-ring-fg" id="timerRing" cx="50" cy="50" r="47"
                   stroke-dasharray="295.31" stroke-dashoffset="0"></circle>
@@ -235,7 +243,7 @@
     SQUEEZE:          { label: "SQUEEZE IT",             color: "#FF7A5C", say: "Squeeze it!", confetti: ["🤏","🫂","😖"] },
     SPANK:            { label: "SPANK IT",               color: "#FF5C5C", say: "Spank it!", confetti: ["👋","💥","😳"] },
     TICKLE:           { label: "TICKLE IT",              color: "#FFD93D", say: "Tickle it!", confetti: ["🤣","✋","😂"] },
-    NOOGIE:           { label: "NOOGIE IT",              color: "#C97C3D", say: "Noogie it!", confetti: ["👊","😆","🤕"] },
+    NOOGIE:           { label: "NOOGIE IT",              color: "#C97C3D", say: "Noo-ghee it!", confetti: ["👊","😆","🤕"] },
     PINCH:            { label: "PINCH IT",               color: "#FF4FD8", say: "Pinch it!", confetti: ["🤏","😖","👀"] },
     POKE:             { label: "POKE IT",                color: "#2EC4B6", say: "Poke it!", confetti: ["👉","😲","😜"] },
     JORK:             { label: "JORK IT",                color: "#8A5CFF", say: "Jork it!", confetti: ["🤪","⚡","❓"] },
@@ -259,6 +267,7 @@
     timerRing: document.getElementById('timerRing'),
     pod: document.getElementById('pod'),
     confirmBtn: document.getElementById('confirmBtn'),
+    confirmWrap: document.getElementById('confirmWrap'),
     idleOverlay: document.getElementById('idleOverlay'),
     gameoverOverlay: document.getElementById('gameoverOverlay'),
     startBtn: document.getElementById('startBtn'),
@@ -315,13 +324,41 @@
     beep(220, 0.3, 'sawtooth', 0.2);
     setTimeout(function () { beep(140, 0.4, 'sawtooth', 0.18); }, 90);
   }
+  var cachedVoice = null;
+  function pickVoice() {
+    if (!window.speechSynthesis) return null;
+    var voices = window.speechSynthesis.getVoices() || [];
+    if (!voices.length) return null;
+    var preferredNames = [
+      'Google US English Male', 'Microsoft David', 'Microsoft Mark',
+      'Daniel', 'Fred', 'Alex', 'Aaron', 'Gordon', 'Eddy', 'Reed',
+      'Google US English'
+    ];
+    for (var i = 0; i < preferredNames.length; i++) {
+      var match = voices.filter(function (v) { return v.name.indexOf(preferredNames[i]) !== -1; })[0];
+      if (match) return match;
+    }
+    var maleMatch = voices.filter(function (v) {
+      return /male/i.test(v.name) && !/female/i.test(v.name);
+    })[0];
+    if (maleMatch) return maleMatch;
+    var enMatch = voices.filter(function (v) { return /^en/i.test(v.lang); })[0];
+    return enMatch || voices[0];
+  }
+  if (window.speechSynthesis) {
+    cachedVoice = pickVoice();
+    window.speechSynthesis.onvoiceschanged = function () { cachedVoice = pickVoice(); };
+  }
   function speak(text) {
     if (state.muted) return;
     try {
       if (!window.speechSynthesis) return;
       window.speechSynthesis.cancel();
       var u = new SpeechSynthesisUtterance(text);
-      u.rate = 1.1; u.pitch = 1.15;
+      // Deeper, punchier, more robotic delivery — closer to the classic
+      // Bop It voice chip: low pitch, energetic clipped rate.
+      u.rate = 1.15; u.pitch = 0.72; u.volume = 1;
+      if (cachedVoice) u.voice = cachedVoice;
       window.speechSynthesis.speak(u);
     } catch (e) {}
   }
@@ -394,6 +431,7 @@
 
     var playing = state.gameState === 'playing';
     el.confirmBtn.classList.toggle('playing', playing);
+    el.confirmWrap.classList.toggle('pulsing', playing);
     el.confirmBtn.classList.toggle('idle-bounce', !playing);
     el.confirmBtn.classList.toggle('combo', playing && state.currentAction === 'COMBO');
 
@@ -536,6 +574,13 @@
     }
     handleConfirm();
   }, true);
+
+  // Fully block scroll/drag gestures everywhere on the page (not just
+  // touchstart) so Safari's chrome never has a reason to collapse or
+  // expand mid-swipe — that resize is what exposes white space.
+  document.addEventListener('touchmove', function (e) {
+    e.preventDefault();
+  }, { passive: false });
 
   window.addEventListener('keydown', function (e) {
     if (state.gameState !== 'playing') return;
