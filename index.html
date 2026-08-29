@@ -54,7 +54,7 @@
   }
   .dork-title.playing { font-size: clamp(44px, 15vw, 92px); }
   .dork-wiggle { display: inline-block; animation: wiggle 1.6s ease-in-out infinite; }
-  .dork-subbar { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; }
+  .dork-subbar { display: flex; align-items: center; justify-content: center; margin-top: 18px; }
   .dork-readout {
     font-family: 'Fredoka', sans-serif; font-weight: 700;
     background: #FFF8ED; border: 3px solid #3B230F; box-shadow: 3px 3px 0 rgba(59,35,15,0.3);
@@ -67,15 +67,6 @@
     transform: scale(1.08); box-shadow: 5px 5px 0 rgba(59,35,15,0.3);
   }
   .dork-readout.pulse-score { animation: scorePulse 0.32s ease; }
-  .dork-mute {
-    background: #FFF8ED; border: 3px solid #3B230F; box-shadow: 3px 3px 0 rgba(59,35,15,0.3);
-    border-radius: 16px; padding: 7px 10px; cursor: pointer; font-size: clamp(16px, 3.8vw, 22px);
-    transition: padding 220ms ease, font-size 220ms ease, transform 220ms ease, box-shadow 220ms ease;
-  }
-  .dork-mute.big {
-    padding: 13px 17px; border-radius: 20px; font-size: clamp(24px, 6vw, 34px);
-    transform: scale(1.08); box-shadow: 5px 5px 0 rgba(59,35,15,0.3);
-  }
 
   .dork-relative {
     position: relative;
@@ -142,7 +133,7 @@
     animation: comboGlow 1s ease-in-out infinite alternate;
   }
 
-  .confetti-piece { position: absolute; left: 50%; top: 50%; font-size: clamp(16px, 3vmin, 28px); pointer-events: none; }
+  .confetti-piece { position: absolute; left: 50%; top: 50%; font-size: clamp(32px, 6vmin, 56px); pointer-events: none; }
 
   .dork-overlay {
     position: absolute; inset: 0; display: flex; flex-direction: column;
@@ -233,7 +224,7 @@
 
     <div class="dork-overlay" id="idleOverlay">
       <div class="dork-overlay-title"><span class="dork-wiggle">🤪</span> DORK IT</div>
-      <p>Hi Marissa, happy birthday! I couldn't get you a Bop It, so I got you the next best thing, a Dork It. Good luck, and don't get dorked!</p>
+      <p>Hi Marissa, happy birthday!<br><br>I couldn't get you a Bop It, so I got you the next best thing, a Dork It.<br><br>Good luck, and don't get dorked!</p>
       <button class="dork-btn" id="startBtn">START!</button>
       <div class="dork-highscore" id="idleHighScore" style="display:none;"></div>
     </div>
@@ -248,7 +239,6 @@
 
   <div class="dork-subbar">
     <div class="dork-readout" id="scoreBox">SCORE <b id="scoreReadout">00</b></div>
-    <button class="dork-mute" id="muteBtn" aria-label="Mute">🔊</button>
   </div>
 </div>
 
@@ -273,7 +263,6 @@
     BOOM:             { label: "BOOM IT",                color: "#FF6B35", say: "Boom it!", confetti: ["💥","🎆","🤯"] },
     BULLY:            { label: "BULLY IT",                color: "#6B4CFF", say: "Bully it!", confetti: ["😈","👊","💢"] },
     BOOP:             { label: "BOOP IT",                 color: "#5CD6FF", say: "Boop it!", confetti: ["👆","🐽","😊"] },
-    PET:              { label: "PET IT",                  color: "#A8D08D", say: "Pet it!", confetti: ["🐾","💕","😊"] },
     MOTORBOAT:        { label: "MOTORBOAT IT",           color: "#29B6F6", say: "Motorboat it!", confetti: ["🚤","💦","😂"] },
     NIBBLE:           { label: "NIBBLE IT",              color: "#E08D79", say: "Nibble it!", confetti: ["🐹","🦷","😬"] },
     RASPBERRY:        { label: "RASPBERRY IT",           color: "#E6398F", say: "Raspberry it!", confetti: ["🍓","😋","✨"] },
@@ -287,7 +276,6 @@
   var el = {
     scoreReadout: document.getElementById('scoreReadout'),
     scoreBox: document.getElementById('scoreBox'),
-    muteBtn: document.getElementById('muteBtn'),
     timerRing: document.getElementById('timerRing'),
     ringSvg: document.getElementById('ringSvg'),
     pod: document.getElementById('pod'),
@@ -327,7 +315,7 @@
   var masterBus = null;
   // Overall SFX loudness boost + a gentle compressor so sounds still read
   // loud and punchy on quiet phone speakers without clipping.
-  var SFX_GAIN = 1.9;
+  var SFX_GAIN = 2.28;
   function sfxVol(v) { return Math.min(0.98, (v || 0.18) * SFX_GAIN); }
   function getCtx() {
     if (!audioCtx) {
@@ -408,7 +396,6 @@
     BOOM:             function () { beep(70, 0.4, 'sine', 0.46); beep(50, 0.3, 'sine', 0.36, 0.05); beep(110, 0.07, 'square', 0.22, 0.35); },
     BULLY:            function () { beep(140, 0.1, 'sawtooth', 0.38); beep(120, 0.12, 'sawtooth', 0.36, 0.1); beep(100, 0.14, 'sawtooth', 0.34, 0.22); },
     BOOP:             function () { beep(440, 0.07, 'sine', 0.34); beep(520, 0.05, 'sine', 0.3, 0.06); beep(410, 0.06, 'sine', 0.26, 0.1); },
-    PET:              function () { glide(700, 460, 0.14, 'sine', 0.3); beep(760, 0.06, 'sine', 0.24, 0.16); },
     MOTORBOAT:        function () { for (var i = 0; i < 8; i++) beep(130 + (i % 2) * 75, 0.03, 'sawtooth', 0.32, i * 0.028); },
     NIBBLE:           function () { for (var i = 0; i < 5; i++) beep(900 + i * 130, 0.02, 'square', 0.28, i * 0.04); },
     RASPBERRY:        function () { glide(120, 55, 0.32, 'sawtooth', 0.4); },
@@ -571,7 +558,6 @@
 
   function render() {
     el.scoreReadout.textContent = String(state.score).padStart(2, '0');
-    el.muteBtn.textContent = state.muted ? '🔇' : '🔊';
 
     var playing = state.gameState === 'playing';
     el.confirmBtn.classList.toggle('playing', playing);
@@ -579,7 +565,6 @@
     el.confirmBtn.classList.toggle('idle-bounce', !playing);
     el.confirmBtn.classList.toggle('combo', playing && state.currentAction === 'COMBO');
     el.scoreBox.classList.toggle('big', playing);
-    el.muteBtn.classList.toggle('big', playing);
     el.dorkTitle.classList.toggle('playing', playing);
     fitTitle();
 
@@ -709,25 +694,17 @@
   // ---------- controls ----------
   el.startBtn.addEventListener('click', startGame);
   el.playAgainBtn.addEventListener('click', startGame);
-  el.muteBtn.addEventListener('click', function () {
-    state.muted = !state.muted;
-    render();
-  });
   // Tap/click ANYWHERE on the screen completes the action — not just the
-  // circle — so it's easy to keep up during fast, frantic play. We still
-  // let the mute button work normally without also triggering a round.
+  // circle — so it's easy to keep up during fast, frantic play.
   var lastTapTime = 0;
-  function isMuteTarget(target) {
-    return target === el.muteBtn || (el.muteBtn.contains && el.muteBtn.contains(target));
-  }
   document.addEventListener('touchstart', function (e) {
-    if (state.gameState !== 'playing' || isMuteTarget(e.target)) return;
+    if (state.gameState !== 'playing') return;
     e.preventDefault();
     lastTapTime = Date.now();
     handleConfirm();
   }, { passive: false });
   document.addEventListener('click', function (e) {
-    if (state.gameState !== 'playing' || isMuteTarget(e.target)) return;
+    if (state.gameState !== 'playing') return;
     if (Date.now() - lastTapTime < 500) {
       e.preventDefault();
       return;
