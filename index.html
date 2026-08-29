@@ -44,12 +44,15 @@
   }
   .dork-app { width: 100%; max-width: 640px; user-select: none; -webkit-user-select: none; }
 
-  .dork-header { display: flex; align-items: center; justify-content: center; margin-bottom: 18px; }
+  .dork-header { display: flex; align-items: center; justify-content: center; margin-bottom: 18px; width: 100%; overflow: hidden; }
   .dork-title {
     font-family: 'Fredoka', sans-serif; font-weight: 700; font-size: clamp(34px, 10vw, 62px);
     color: #FFF8ED; text-shadow: 3px 3px 0 #3B230F;
     display: flex; align-items: center; gap: 10px;
+    white-space: nowrap; max-width: 100%;
+    transition: font-size 220ms ease;
   }
+  .dork-title.playing { font-size: clamp(44px, 15vw, 92px); }
   .dork-wiggle { display: inline-block; animation: wiggle 1.6s ease-in-out infinite; }
   .dork-subbar { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; }
   .dork-readout {
@@ -97,9 +100,10 @@
   .dork-confirm-wrap.pulsing { animation: slowPulse 3.4s ease-in-out infinite; }
   .dork-ring {
     position: absolute; inset: 0; width: 100%; height: 100%;
-    transform: rotate(-90deg); pointer-events: none;
-    z-index: 2;
+    pointer-events: none; z-index: 1;
+    transition: transform 90ms ease;
   }
+  .dork-ring.pressed { transform: translate(5px, 5px); }
   .dork-ring-fg {
     fill: none; stroke: #4ADE9C; stroke-width: 6; stroke-linecap: round;
     transition: stroke-dashoffset 60ms linear, stroke 200ms ease;
@@ -107,7 +111,7 @@
 
   .dork-confirm {
     position: relative;
-    z-index: 1;
+    z-index: 2;
     width: 88%;
     height: 88%;
     border-radius: 9999px;
@@ -212,15 +216,16 @@
 <div id="bgFill"></div>
 
 <div class="dork-app">
-  <div class="dork-header">
-    <div class="dork-title"><span class="dork-wiggle">🎉</span> DORK IT</div>
+  <div class="dork-header" id="dorkHeader">
+    <div class="dork-title" id="dorkTitle"><span class="dork-wiggle">🎉</span> DORK IT</div>
   </div>
 
   <div class="dork-relative">
     <div class="dork-pod" id="pod">
       <div class="dork-confirm-wrap" id="confirmWrap">
-        <svg class="dork-ring" viewBox="0 0 100 100">
+        <svg class="dork-ring" id="ringSvg" viewBox="0 0 100 100">
           <circle class="dork-ring-fg" id="timerRing" cx="50" cy="50" r="47"
+                  transform="rotate(-90 50 50)"
                   stroke-dasharray="295.31" stroke-dashoffset="0"></circle>
         </svg>
         <button class="dork-confirm idle-bounce" id="confirmBtn">READY?</button>
@@ -285,6 +290,7 @@
     scoreBox: document.getElementById('scoreBox'),
     muteBtn: document.getElementById('muteBtn'),
     timerRing: document.getElementById('timerRing'),
+    ringSvg: document.getElementById('ringSvg'),
     pod: document.getElementById('pod'),
     confirmBtn: document.getElementById('confirmBtn'),
     confirmWrap: document.getElementById('confirmWrap'),
@@ -294,7 +300,9 @@
     playAgainBtn: document.getElementById('playAgainBtn'),
     idleHighScore: document.getElementById('idleHighScore'),
     finalScore: document.getElementById('finalScore'),
-    gameoverSub: document.getElementById('gameoverSub')
+    gameoverSub: document.getElementById('gameoverSub'),
+    dorkHeader: document.getElementById('dorkHeader'),
+    dorkTitle: document.getElementById('dorkTitle')
   };
 
   var state = {
@@ -317,10 +325,25 @@
 
   // ---------- audio ----------
   var audioCtx = null;
+  var masterBus = null;
+  // Overall SFX loudness boost + a gentle compressor so sounds still read
+  // loud and punchy on quiet phone speakers without clipping.
+  var SFX_GAIN = 1.9;
+  function sfxVol(v) { return Math.min(0.98, (v || 0.18) * SFX_GAIN); }
   function getCtx() {
     if (!audioCtx) {
       var AC = window.AudioContext || window.webkitAudioContext;
-      if (AC) audioCtx = new AC();
+      if (AC) {
+        audioCtx = new AC();
+        var comp = audioCtx.createDynamicsCompressor();
+        comp.threshold.setValueAtTime(-16, audioCtx.currentTime);
+        comp.knee.setValueAtTime(22, audioCtx.currentTime);
+        comp.ratio.setValueAtTime(9, audioCtx.currentTime);
+        comp.attack.setValueAtTime(0.002, audioCtx.currentTime);
+        comp.release.setValueAtTime(0.15, audioCtx.currentTime);
+        comp.connect(audioCtx.destination);
+        masterBus = comp;
+      }
     }
     return audioCtx;
   }
@@ -333,8 +356,8 @@
       var gain = ctx.createGain();
       osc.type = type || 'sine';
       osc.frequency.setValueAtTime(freq, t0);
-      gain.gain.setValueAtTime(vol || 0.18, t0);
-      osc.connect(gain); gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(sfxVol(vol), t0);
+      osc.connect(gain); gain.connect(masterBus || ctx.destination);
       osc.start(t0);
       gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
       osc.stop(t0 + dur);
@@ -350,8 +373,8 @@
       osc.type = type || 'sine';
       osc.frequency.setValueAtTime(freq1, t0);
       osc.frequency.exponentialRampToValueAtTime(freq2, t0 + dur);
-      gain.gain.setValueAtTime(vol || 0.18, t0);
-      osc.connect(gain); gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(sfxVol(vol), t0);
+      osc.connect(gain); gain.connect(masterBus || ctx.destination);
       osc.start(t0);
       gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
       osc.stop(t0 + dur);
@@ -427,10 +450,14 @@
     if (!window.speechSynthesis) return null;
     var voices = window.speechSynthesis.getVoices() || [];
     if (!voices.length) return null;
+    // Prefer higher-quality "natural"/neural voices first (Edge, Chrome,
+    // macOS/iOS premium voices) before falling back to older robotic ones.
     var preferredNames = [
-      'Google US English Male', 'Microsoft David', 'Microsoft Mark',
-      'Daniel', 'Fred', 'Alex', 'Aaron', 'Gordon', 'Eddy', 'Reed',
-      'Google US English'
+      'Online (Natural)', 'Neural', 'Premium', 'Enhanced',
+      'Google US English', 'Google UK English Male',
+      'Samantha', 'Alex', 'Daniel', 'Aaron', 'Nicky', 'Fred',
+      'Microsoft Guy', 'Microsoft Ryan', 'Microsoft Davis',
+      'Microsoft David', 'Microsoft Mark', 'Gordon', 'Eddy', 'Reed'
     ];
     for (var i = 0; i < preferredNames.length; i++) {
       var match = voices.filter(function (v) { return v.name.indexOf(preferredNames[i]) !== -1; })[0];
@@ -453,9 +480,9 @@
       if (!window.speechSynthesis) return;
       window.speechSynthesis.cancel();
       var u = new SpeechSynthesisUtterance(text);
-      // Deeper, punchier, more robotic delivery — closer to the classic
-      // Bop It voice chip: low pitch, energetic clipped rate.
-      u.rate = 1.0; u.pitch = 0.85; u.volume = 1;
+      // Fast, upbeat, hyped-up delivery — quick clip with a slightly
+      // raised pitch for extra enthusiasm.
+      u.rate = 1.56; u.pitch = 1.05; u.volume = 1;
       if (cachedVoice) u.voice = cachedVoice;
       window.speechSynthesis.speak(u);
     } catch (e) {}
@@ -523,6 +550,26 @@
     return 'COMBO';
   }
 
+  // Keeps "DORK IT" centered on one line: reset to the CSS-driven size,
+  // then shrink in px steps only if it would actually overflow/wrap.
+  function fitTitle() {
+    var titleEl = el.dorkTitle;
+    var container = el.dorkHeader;
+    if (!titleEl || !container) return;
+    titleEl.style.fontSize = '';
+    requestAnimationFrame(function () {
+      var maxWidth = container.clientWidth;
+      var tries = 0;
+      while (titleEl.scrollWidth > maxWidth && tries < 40) {
+        var current = parseFloat(getComputedStyle(titleEl).fontSize);
+        if (!current || current <= 14) break;
+        titleEl.style.fontSize = (current - 1) + 'px';
+        tries++;
+      }
+    });
+  }
+  window.addEventListener('resize', fitTitle);
+
   function render() {
     el.scoreReadout.textContent = String(state.score).padStart(2, '0');
     el.muteBtn.textContent = state.muted ? '🔇' : '🔊';
@@ -534,6 +581,8 @@
     el.confirmBtn.classList.toggle('combo', playing && state.currentAction === 'COMBO');
     el.scoreBox.classList.toggle('big', playing);
     el.muteBtn.classList.toggle('big', playing);
+    el.dorkTitle.classList.toggle('playing', playing);
+    fitTitle();
 
     if (playing && state.currentAction) {
       if (Array.isArray(state.currentAction)) {
@@ -585,7 +634,7 @@
 
     var count = Array.isArray(action) ? action.length : (action === 'COMBO' ? 4 : 1);
     // Exact round durations: single 3s, double 4s, triple 5s, long 6s.
-    var baseDuration = action === 'COMBO' ? 4500 : (count === 3 ? 4000 : (count === 2 ? 3500 : 3000));
+    var baseDuration = action === 'COMBO' ? 6000 : (count === 3 ? 4000 : (count === 2 ? 3500 : 3000));
     state.duration = baseDuration * state.speedMultiplier;
     state.startTime = performance.now();
 
@@ -629,7 +678,8 @@
     successSound(state.currentAction);
     popConfetti(Array.isArray(state.currentAction) ? state.currentAction[0] : state.currentAction);
     el.confirmBtn.classList.add('success', 'pressed');
-    setTimeout(function () { el.confirmBtn.classList.remove('pressed'); }, 150);
+    el.ringSvg.classList.add('pressed');
+    setTimeout(function () { el.confirmBtn.classList.remove('pressed'); el.ringSvg.classList.remove('pressed'); }, 150);
     setTimeout(function () { el.confirmBtn.classList.remove('success'); }, 350);
     state.score += 1;
     state.speedMultiplier *= 0.99; // 1% faster each success
