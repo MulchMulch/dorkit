@@ -42,17 +42,16 @@
     display: flex; align-items: center; justify-content: center;
     padding: 20px;
   }
-  .dork-app { width: 100%; max-width: 640px; user-select: none; -webkit-user-select: none; }
+  .dork-app { width: 100%; max-width: 640px; min-width: 0; user-select: none; -webkit-user-select: none; }
 
-  .dork-header { display: flex; align-items: center; justify-content: center; margin-bottom: 18px; width: 100%; overflow: hidden; }
+  .dork-header { display: flex; align-items: center; justify-content: center; margin-bottom: 18px; width: 100%; min-width: 0; overflow: hidden; }
   .dork-title {
-    font-family: 'Fredoka', sans-serif; font-weight: 700; font-size: clamp(34px, 10vw, 62px);
+    font-family: 'Fredoka', sans-serif; font-weight: 700; font-size: clamp(44px, 15vw, 92px);
     color: #FFF8ED; text-shadow: 3px 3px 0 #3B230F;
     display: flex; align-items: center; gap: 10px;
     white-space: nowrap; max-width: 100%;
     transition: font-size 220ms ease;
   }
-  .dork-title.playing { font-size: clamp(44px, 15vw, 92px); }
   .dork-wiggle { display: inline-block; animation: wiggle 1.6s ease-in-out infinite; }
   .dork-subbar { display: flex; align-items: center; justify-content: center; margin-top: 18px; }
   .dork-readout {
@@ -223,7 +222,6 @@
     </div>
 
     <div class="dork-overlay" id="idleOverlay">
-      <div class="dork-overlay-title"><span class="dork-wiggle">🤪</span> DORK IT</div>
       <p>Hi Marissa, happy birthday!<br><br>I couldn't get you a Bop It, so I got you the next best thing, a Dork It.<br><br>Good luck, and don't get dorked!</p>
       <button class="dork-btn" id="startBtn">START!</button>
       <div class="dork-highscore" id="idleHighScore" style="display:none;"></div>
@@ -542,19 +540,36 @@
     var titleEl = el.dorkTitle;
     var container = el.dorkHeader;
     if (!titleEl || !container) return;
+    // The title has a CSS transition on font-size for the idle->playing
+    // size change. That transition interferes with this synchronous
+    // shrink loop: reading scrollWidth right after changing font-size
+    // would catch a mid-transition (not final) box size. Disable the
+    // transition while we measure/adjust, then restore it.
+    var prevTransition = titleEl.style.transition;
+    titleEl.style.transition = 'none';
     titleEl.style.fontSize = '';
     requestAnimationFrame(function () {
       var maxWidth = container.clientWidth;
       var tries = 0;
-      while (titleEl.scrollWidth > maxWidth && tries < 40) {
+      while (titleEl.scrollWidth > maxWidth && tries < 60) {
         var current = parseFloat(getComputedStyle(titleEl).fontSize);
         if (!current || current <= 14) break;
         titleEl.style.fontSize = (current - 1) + 'px';
         tries++;
       }
+      // Force layout to flush the final size before re-enabling the
+      // transition, so it doesn't animate from a stale intermediate value.
+      void titleEl.offsetWidth;
+      titleEl.style.transition = prevTransition;
     });
   }
   window.addEventListener('resize', fitTitle);
+  // Re-run once the webfont actually swaps in — the font loads async
+  // (font-display: swap), so the very first fitTitle() call can measure
+  // against the fallback font and under-shrink before Fredoka arrives.
+  if (window.document && document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(fitTitle).catch(function () {});
+  }
 
   function render() {
     el.scoreReadout.textContent = String(state.score).padStart(2, '0');
@@ -599,7 +614,7 @@
     if (state.rafId) cancelAnimationFrame(state.rafId);
   }
 
-  var RING_START_DELAY = 100; // ms — hold the ring full before it starts draining
+  var RING_START_DELAY = 200; // ms — hold the ring full before it starts draining
 
   function loop() {
     var now = performance.now();
