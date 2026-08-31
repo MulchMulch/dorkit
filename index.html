@@ -270,7 +270,8 @@
   .dork-overlay {
     position: absolute; inset: 0; display: flex; flex-direction: column;
     align-items: center; justify-content: center; text-align: center;
-    padding: 0 8%; border-radius: 24px; background: rgba(255,248,237,0.97);
+    padding: 0 8%; border-radius: 24px; background: #FFF8ED;
+    border-style: solid; border-width: clamp(6px, 1.6vmin, 16px); border-color: #3B230F;
     z-index: 20;
   }
   .dork-overlay-title {
@@ -279,7 +280,7 @@
   }
   .dork-overlay p {
     color: #7A5A38; font-family: 'Baloo 2', sans-serif; font-weight: 600;
-    font-size: clamp(19.2px, 4.56vw, 25.2px); max-width: 420px; margin: 0 0 20px; line-height: 1.5;
+    font-size: clamp(21.12px, 5.016vw, 27.72px); max-width: 420px; margin: 0 0 20px; line-height: 1.5;
   }
   .dork-btn {
     font-family: 'Fredoka', sans-serif; font-weight: 700; background: #4ADE9C; color: #1F3B2C;
@@ -709,12 +710,29 @@
     titleEl.style.fontSize = '';
     requestAnimationFrame(function () {
       var maxWidth = container.clientWidth;
-      var tries = 0;
-      while (titleEl.scrollWidth > maxWidth && tries < 60) {
+      var scrollWidth = titleEl.scrollWidth; // one forced layout read
+      if (scrollWidth > maxWidth) {
         var current = parseFloat(getComputedStyle(titleEl).fontSize);
-        if (!current || current <= 14) break;
-        titleEl.style.fontSize = (current - 1) + 'px';
-        tries++;
+        if (current && current > 14) {
+          // Jump straight to (approximately) the right size using the
+          // overflow ratio instead of nudging down 1px at a time. The
+          // old version re-forced a synchronous layout on every single
+          // 1px step (up to 60 of them) to re-check scrollWidth — that
+          // burst of forced layout work landed on the main thread at
+          // the exact moment the score boxes/title were also mid CSS
+          // transition (padding/font-size), which is what caused the
+          // visible stutter right as the morph handed off to the game.
+          // A couple of small correction steps below handle any
+          // rounding slack from the estimate.
+          var target = Math.max(14, Math.floor(current * (maxWidth / scrollWidth) * 0.97));
+          titleEl.style.fontSize = target + 'px';
+          var tries = 0;
+          while (titleEl.scrollWidth > maxWidth && tries < 5 && target > 14) {
+            target -= 1;
+            titleEl.style.fontSize = target + 'px';
+            tries++;
+          }
+        }
       }
       // Force layout to flush the final size before re-enabling the
       // transition, so it doesn't animate from a stale intermediate value.
@@ -862,13 +880,81 @@
     state.score = 0;
     state.speedMultiplier = 1;
     state.gameState = 'playing';
-    render();
+    // nextRound() below calls render() itself (it needs to, to paint the
+    // new round's action/label), so there's no need to also render()
+    // here first — doing so just duplicated every class toggle and the
+    // fitTitle() layout work in the same tick, right at the moment the
+    // morph hands off to the game, which was part of what made that
+    // handoff feel like a stutter.
     nextRound(0);
   }
 
+  // ---------- overlay -> button morph transition ----------
+  var FADE_MS = 150;
+  var MORPH_MS = 380;
+
+  function morphOverlayIntoButton(overlayEl, onDone) {
+    var children = Array.prototype.slice.call(overlayEl.children);
+    overlayEl.style.pointerEvents = 'none';
+
+    // 1) Quickly fade out all the overlay's content.
+    children.forEach(function (c) {
+      c.style.transition = 'opacity ' + FADE_MS + 'ms ease';
+      c.style.opacity = '0';
+    });
+
+    setTimeout(function () {
+      // 2) Morph the (now-empty) box from its current rect into the
+      // confirm button's circle, using its actual on-screen position so
+      // this works regardless of viewport size. Animating `transform`
+      // (translate + scale) instead of left/top/width/height keeps this
+      // on the compositor — animating layout properties like width/height
+      // forces the browser to recompute layout every frame, which is
+      // what was causing the stutter.
+      var startRect = overlayEl.getBoundingClientRect();
+      var targetRect = el.confirmWrap.getBoundingClientRect();
+
+      var dx = (targetRect.left + targetRect.width / 2) - (startRect.left + startRect.width / 2);
+      var dy = (targetRect.top + targetRect.height / 2) - (startRect.top + startRect.height / 2);
+      var sx = targetRect.width / startRect.width;
+      var sy = targetRect.height / startRect.height;
+
+      overlayEl.style.willChange = 'transform, border-radius';
+      overlayEl.style.transition = 'none';
+      overlayEl.style.transform = 'translate(0px, 0px) scale(1, 1)';
+      void overlayEl.offsetWidth; // flush before animating
+
+      // Wait a frame so the identity transform above actually paints
+      // before the transitioned values are applied, otherwise the
+      // browser can coalesce both style writes into one frame and skip
+      // straight to the end state.
+      requestAnimationFrame(function () {
+        overlayEl.style.transition =
+          'transform ' + MORPH_MS + 'ms cubic-bezier(.4,0,.2,1), ' +
+          'border-radius ' + MORPH_MS + 'ms cubic-bezier(.4,0,.2,1)';
+        overlayEl.style.transform = 'translate(' + dx + 'px, ' + dy + 'px) scale(' + sx + ', ' + sy + ')';
+        overlayEl.style.borderRadius = '50%';
+      });
+
+      setTimeout(function () {
+        // 3) Hand off to the real game button/ring underneath, then begin.
+        overlayEl.style.display = 'none';
+        overlayEl.style.cssText = '';
+        children.forEach(function (c) { c.style.cssText = ''; });
+        onDone();
+      }, MORPH_MS + 40);
+    }, FADE_MS + 20);
+  }
+
   // ---------- controls ----------
-  el.startBtn.addEventListener('click', startGame);
-  el.playAgainBtn.addEventListener('click', startGame);
+  el.startBtn.addEventListener('click', function (e) {
+    e.preventDefault();
+    morphOverlayIntoButton(el.idleOverlay, startGame);
+  });
+  el.playAgainBtn.addEventListener('click', function (e) {
+    e.preventDefault();
+    morphOverlayIntoButton(el.gameoverOverlay, startGame);
+  });
   // Tap/click ANYWHERE on the screen completes the action — not just the
   // circle — so it's easy to keep up during fast, frantic play.
   var lastTapTime = 0;
