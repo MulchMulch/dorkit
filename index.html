@@ -53,7 +53,16 @@
     display: flex; align-items: center; justify-content: center;
     padding: 20px;
   }
-  .dork-app { width: 100%; max-width: 640px; min-width: 0; user-select: none; -webkit-user-select: none; }
+  /* position:relative (no offset, so no layout change) is required here:
+     #bgFill/#logoTile are position:fixed. Per CSS stacking rules, ANY
+     positioned element (even with z-index:auto) paints above static
+     in-flow content in the same stacking context, regardless of DOM
+     order. Without this, .dork-app (static) would render BEHIND the
+     fixed background layers no matter what order they're written in,
+     hiding the whole app. Making .dork-app positioned too puts it in
+     the same z-index:auto stacking bucket as the background layers,
+     where DOM order (declared after them) correctly wins. */
+  .dork-app { position: relative; width: 100%; max-width: 640px; min-width: 0; user-select: none; -webkit-user-select: none; }
 
   .dork-header { display: flex; align-items: center; justify-content: center; margin-bottom: 18px; width: 100%; min-width: 0; overflow: hidden; }
   .dork-title {
@@ -170,7 +179,7 @@
     text-shadow: none;
     animation: wiggle 1.6s ease-in-out infinite;
   }
-  .dork-subbar { display: flex; align-items: center; justify-content: center; margin-top: 18px; }
+  .dork-subbar { display: flex; align-items: center; justify-content: center; gap: 28px; margin-top: 18px; }
   .dork-readout {
     font-family: 'Fredoka', sans-serif; font-weight: 700;
     background: #FFF8ED; border: 3px solid #3B230F; box-shadow: 3px 3px 0 rgba(59,35,15,0.3);
@@ -365,7 +374,6 @@
     <div class="dork-overlay" id="idleOverlay">
       <p>Hi Marissa, happy birthday!<br><br>I couldn't get you a Bop It, so I got you the next best thing, a Dork It.<br><br>Good luck, and don't get dorked!</p>
       <button class="dork-btn" id="startBtn">START!</button>
-      <div class="dork-highscore" id="idleHighScore" style="display:none;"></div>
     </div>
 
     <div class="dork-overlay" id="gameoverOverlay" style="display:none;">
@@ -378,6 +386,7 @@
 
   <div class="dork-subbar">
     <div class="dork-readout" id="scoreBox">SCORE <b id="scoreReadout">00</b></div>
+    <div class="dork-readout" id="highScoreBox" style="display:none;">HIGH <b id="highScoreReadout">00</b></div>
   </div>
 </div>
 
@@ -415,6 +424,8 @@
   var el = {
     scoreReadout: document.getElementById('scoreReadout'),
     scoreBox: document.getElementById('scoreBox'),
+    highScoreBox: document.getElementById('highScoreBox'),
+    highScoreReadout: document.getElementById('highScoreReadout'),
     timerRing: document.getElementById('timerRing'),
     ringSvg: document.getElementById('ringSvg'),
     pod: document.getElementById('pod'),
@@ -424,7 +435,6 @@
     gameoverOverlay: document.getElementById('gameoverOverlay'),
     startBtn: document.getElementById('startBtn'),
     playAgainBtn: document.getElementById('playAgainBtn'),
-    idleHighScore: document.getElementById('idleHighScore'),
     finalScore: document.getElementById('finalScore'),
     gameoverSub: document.getElementById('gameoverSub'),
     dorkHeader: document.getElementById('dorkHeader'),
@@ -721,6 +731,7 @@
     el.confirmBtn.classList.toggle('idle-bounce', !playing);
     el.confirmBtn.classList.toggle('combo', playing && state.currentAction === 'COMBO');
     el.scoreBox.classList.toggle('big', playing);
+    el.highScoreBox.classList.toggle('big', playing);
     el.dorkTitle.classList.toggle('playing', playing);
     fitTitle();
 
@@ -746,8 +757,8 @@
     el.idleOverlay.style.display = state.gameState === 'idle' ? 'flex' : 'none';
     el.gameoverOverlay.style.display = state.gameState === 'gameover' ? 'flex' : 'none';
     if (state.highScore > 0) {
-      el.idleHighScore.style.display = 'block';
-      el.idleHighScore.textContent = 'HIGH SCORE: ' + state.highScore;
+      el.highScoreBox.style.display = 'block';
+      el.highScoreReadout.textContent = String(state.highScore).padStart(2, '0');
     }
   }
 
