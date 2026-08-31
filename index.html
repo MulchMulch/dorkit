@@ -184,7 +184,7 @@
     font-family: 'Fredoka', sans-serif; font-weight: 700;
     background: #FFF8ED; border: 3px solid #3B230F; box-shadow: 3px 3px 0 rgba(59,35,15,0.3);
     padding: 6px 12px; border-radius: 16px; font-size: clamp(14px, 3.2vw, 18px);
-    transition: padding 220ms ease, font-size 220ms ease, transform 220ms ease, box-shadow 220ms ease;
+    transition: padding 220ms ease, font-size 220ms ease, box-shadow 220ms ease;
   }
   .dork-readout b { color: #FF5FA2; }
   .dork-readout.big {
@@ -194,7 +194,11 @@
     padding: 13px 24px; border-radius: 22px; font-size: clamp(22px, 5.4vw, 32px);
     transform: none; box-shadow: 5px 5px 0 rgba(59,35,15,0.3);
   }
-  .dork-readout.pulse-score { animation: scorePulse 0.32s ease; }
+  .dork-readout.pulse-score {
+    animation: scorePulse 0.32s ease-in-out;
+    transform-origin: center center;
+    will-change: transform;
+  }
 
   .dork-relative {
     position: relative;
@@ -240,7 +244,7 @@
     border-color: #3B230F;
     color: #3B230F;
     font-family: 'Fredoka', sans-serif; font-weight: 700;
-    font-size: clamp(22px, 6vmin, 44px);
+    font-size: clamp(25px, 6.8vmin, 44px);
     letter-spacing: 0.5px;
     line-height: 1.25;
     padding: 0 6%;
@@ -255,13 +259,13 @@
   .dork-confirm.idle-bounce { animation: bounceIdle 1.8s ease-in-out infinite; }
   .dork-confirm.pressed { transform: translate(5px, 5px); }
   .dork-confirm.success { animation: popIn 0.3s ease; }
-  .dork-confirm.long-label { font-size: clamp(20px, 5.4vmin, 40px); overflow-wrap: anywhere; word-break: normal; }
+  .dork-confirm.long-label { font-size: clamp(23px, 6vmin, 40px); overflow-wrap: anywhere; word-break: normal; }
   .dork-confirm.combo {
     box-shadow: 0 0 14px 6px rgba(255,215,0,0.45);
     animation: comboGlow 1s ease-in-out infinite alternate;
   }
 
-  .confetti-piece { position: absolute; left: 50%; top: 50%; font-size: clamp(32px, 6vmin, 56px); pointer-events: none; }
+  .confetti-piece { position: absolute; left: 50%; top: 50%; font-size: clamp(48px, 9vmin, 84px); pointer-events: none; }
 
   .dork-overlay {
     position: absolute; inset: 0; display: flex; flex-direction: column;
@@ -323,9 +327,9 @@
     to   { box-shadow: 0 0 26px 12px rgba(255,215,0,0.75); }
   }
   @keyframes scorePulse {
-    0%   { transform: scale(1.08); }
-    45%  { transform: scale(1.22); }
-    100% { transform: scale(1.08); }
+    0%   { transform: scale(1); }
+    45%  { transform: scale(1.13); }
+    100% { transform: scale(1); }
   }
 </style>
 </head>
@@ -342,14 +346,14 @@
       <pattern id="logoPattern" patternUnits="userSpaceOnUse" width="225" height="150">
         <g fill="#FFFFFF" fill-opacity="0.25">
           <!-- Row 1: normal alignment -->
-          <use href="#tileIconCinnamoroll" x="0" y="0"></use>
+          <use href="#tileIconCinnamoroll" x="0" y="0" transform="translate(37.5 37.5) scale(1.5) translate(-37.5 -37.5)"></use>
           <use href="#tileIconMiffy" x="75" y="0"></use>
           <use href="#tileIconSnoopy" x="150" y="0"></use>
 
           <!-- Row 2: shifted by half the 75px icon spacing -->
           <use href="#tileIconMiffy" x="-37.5" y="75"></use>
           <use href="#tileIconSnoopy" x="37.5" y="75"></use>
-          <use href="#tileIconCinnamoroll" x="112.5" y="75"></use>
+          <use href="#tileIconCinnamoroll" x="112.5" y="75" transform="translate(150 112.5) scale(1.5) translate(-150 -112.5)"></use>
           <use href="#tileIconMiffy" x="187.5" y="75"></use>
         </g>
       </pattern>
