@@ -234,7 +234,14 @@
     font-family: 'Fredoka', sans-serif; font-weight: 700;
     background: #FFF8ED; border: var(--dork-score-border-w) solid #3B230F; box-shadow: 5px 5px 0 rgba(59,35,15,0.3);
     padding: 13px 24px; border-radius: 22px; font-size: clamp(22px, 5.4vw, 32px);
+    transform: scale(0.62);
+    transition: transform 380ms cubic-bezier(.4,0,.2,1);
+    will-change: transform;
   }
+  /* Anchor each card at its inner edge. Shrinking therefore preserves the
+     exact visual gap while the full-size layout footprint stays unchanged. */
+  #scoreBox { transform-origin: right center; }
+  #highScoreBox { transform-origin: left center; }
   .dork-readout b {
     color: #FF5FA2;
     display: inline-block;
@@ -243,10 +250,10 @@
     font-variant-numeric: tabular-nums;
   }
   .dork-readout.big {
-    /* Geometry stays fixed across idle/gameplay so starting or ending a
-       round cannot reflow the header, score row, or central button. */
+    /* Transform-only growth gives the original small-to-large appearance
+       without changing layout dimensions or re-centering the game. */
     padding: 13px 24px; border-radius: 22px; font-size: clamp(22px, 5.4vw, 32px);
-    transform: none; box-shadow: 5px 5px 0 rgba(59,35,15,0.3);
+    transform: scale(1); box-shadow: 5px 5px 0 rgba(59,35,15,0.3);
   }
   .dork-readout.pulse-score {
     animation: scorePulse 0.32s ease-in-out;
@@ -499,7 +506,7 @@
 
 <div id="bgFill"></div>
 
-<div class="version-indicator" aria-hidden="true">v97</div>
+<div class="version-indicator" aria-hidden="true">v98</div>
 
 <div id="logoTile" aria-hidden="true">
   <svg xmlns="http://www.w3.org/2000/svg">
@@ -1068,8 +1075,10 @@
   function setPlayingLayout(playing) {
     if (playingLayoutIsActive === playing) return;
     playingLayoutIsActive = playing;
-    // Header and score-card geometry is intentionally invariant. Changing
-    // padding/font size here used to re-center the whole app mid-morph.
+    // Only the compositor transform changes; padding and font-size remain
+    // fixed so the header, button and overlay never reflow during the morph.
+    el.scoreBox.classList.toggle('big', playing);
+    el.highScoreBox.classList.toggle('big', playing);
   }
 
   function render(skipPlayingLayout) {
@@ -1337,6 +1346,9 @@
   function pulseReadout(target, animationKey) {
     if (state[animationKey]) state[animationKey].cancel();
     if (typeof target.animate === 'function') {
+      // The idle-size transition anchors at the inner edge to preserve the
+      // gap; gameplay pulses should expand evenly from the card's center.
+      target.style.transformOrigin = 'center center';
       var animation = target.animate([
         { transform: 'scale(1)' },
         { transform: 'scale(1.13)', offset: 0.45 },
@@ -1344,7 +1356,10 @@
       ], { duration: 320, easing: 'ease-in-out' });
       state[animationKey] = animation;
       animation.onfinish = animation.oncancel = function () {
-        if (state[animationKey] === animation) state[animationKey] = null;
+        if (state[animationKey] === animation) {
+          state[animationKey] = null;
+          target.style.transformOrigin = '';
+        }
       };
     } else {
       target.classList.remove('pulse-score');
