@@ -222,12 +222,13 @@
 
   .dork-confirm-wrap {
     position: relative;
-    top: -8px;
     width: clamp(240px, 82vmin, 640px);
     height: clamp(240px, 82vmin, 640px);
     display: flex; align-items: center; justify-content: center;
     transform-origin: center;
+    transform: translateY(-8px);
   }
+  .dork-confirm-wrap.pulsing { animation: none; }
   .dork-ring {
     position: absolute; inset: 0; width: 100%; height: 100%;
     pointer-events: none; z-index: 1;
@@ -236,7 +237,7 @@
   .dork-ring.pressed { transform: none; }
   .dork-ring-fg {
     fill: none; stroke: #4ADE9C; stroke-width: 6; stroke-linecap: round;
-    transition: stroke-dashoffset 60ms linear, stroke 200ms ease;
+    transition: stroke-dashoffset 45ms linear, stroke 120ms ease;
   }
 
   .dork-confirm {
@@ -263,15 +264,6 @@
     user-select: none;
   }
   .dork-confirm.playing { cursor: pointer; }
-  /* Freeze the real button while an overlay morphs into it. The idle
-     bounce otherwise changes its transform while we measure/animate to it,
-     which can leave the morph ending at a different position and then
-     visibly snap when the real button is revealed. */
-  .dork-confirm.morphing-target {
-    animation: none !important;
-    transform: none !important;
-    transition: none !important;
-  }
   .dork-confirm.idle-bounce { animation: bounceIdle 1.8s ease-in-out infinite; }
   .dork-confirm.pressed { transform: none; }
   .dork-confirm.success { animation: popIn 0.3s ease; }
@@ -281,7 +273,11 @@
     animation: comboGlow 1s ease-in-out infinite alternate;
   }
 
-  .confetti-piece { position: absolute; left: 50%; top: 50%; z-index: 30; font-size: clamp(48px, 9vmin, 84px); pointer-events: none; will-change: transform, opacity; }
+  .confetti-piece {
+    position: absolute; left: 50%; top: 50%; z-index: 40;
+    font-size: clamp(48px, 9vmin, 84px); pointer-events: none;
+    will-change: transform, opacity;
+  }
 
   .dork-overlay {
     position: absolute; inset: 0; display: flex; flex-direction: column;
@@ -318,6 +314,10 @@
   @keyframes bounceIdle {
     0%, 100% { transform: translateY(0) scale(1); }
     50% { transform: translateY(-6px) scale(1.02); }
+  }
+  @keyframes slowPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.025); }
   }
   @keyframes popIn {
     0% { transform: scale(0.7); }
@@ -476,6 +476,10 @@
     muted: false,
     attempted: false,
     rafId: null,
+    failTimeoutId: null,
+    lastRingPaint: 0,
+    ringColor: '',
+    morphingOut: false,
     startTime: 0,
     duration: 3400,
     speedMultiplier: 1
@@ -756,7 +760,10 @@
   // right before or right after. Both this and the box-morph transform
   // now run over the same MORPH_MS duration, so everything settles at
   // the same time with nothing left to shift afterward.
+  var playingLayoutIsActive = null;
   function setPlayingLayout(playing) {
+    if (playingLayoutIsActive === playing) return;
+    playingLayoutIsActive = playing;
     el.scoreBox.classList.toggle('big', playing);
     el.highScoreBox.classList.toggle('big', playing);
     el.dorkTitle.classList.toggle('playing', playing);
@@ -768,7 +775,8 @@
 
     var playing = state.gameState === 'playing';
     el.confirmBtn.classList.toggle('playing', playing);
-    el.confirmBtn.classList.toggle('idle-bounce', !playing);
+    el.confirmWrap.classList.remove('pulsing');
+    el.confirmBtn.classList.toggle('idle-bounce', !playing && !state.morphingOut);
     el.confirmBtn.classList.toggle('combo', playing && state.currentAction === 'COMBO');
     if (!skipPlayingLayout) setPlayingLayout(playing);
 
@@ -784,7 +792,7 @@
         el.confirmBtn.style.borderColor = '#3B230F';
         el.confirmBtn.classList.remove('long-label');
       }
-    } else {
+    } else if (!state.morphingOut) {
       el.confirmBtn.textContent = 'READY?';
       el.confirmBtn.style.borderColor = '#3B230F';
       el.confirmBtn.classList.remove('long-label');
@@ -802,7 +810,7 @@
     }
 
     el.idleOverlay.style.display = state.gameState === 'idle' ? 'flex' : 'none';
-    el.gameoverOverlay.style.display = state.gameState === 'gameover' ? 'flex' : 'none';
+    el.gameoverOverlay.style.display = state.gameState === 'gameover' && !state.morphingOut ? 'flex' : 'none';
     if (state.highScore > 0) {
       el.highScoreBox.style.display = 'block';
       el.highScoreReadout.textContent = String(state.highScore).padStart(2, '0');
@@ -811,25 +819,42 @@
 
   function clearTimer() {
     if (state.rafId) cancelAnimationFrame(state.rafId);
+    if (state.failTimeoutId) clearTimeout(state.failTimeoutId);
+    state.rafId = null;
+    state.failTimeoutId = null;
   }
 
   var RING_START_DELAY = 200; // ms — hold the ring full before it starts draining
 
-  function loop() {
-    var now = performance.now();
+  var RING_FRAME_MS = 1000 / 30;
+  function loop(now) {
+    if (state.gameState !== 'playing') return;
     var elapsed = now - state.startTime;
     if (elapsed < 0) {
-      el.timerRing.style.strokeDashoffset = 0;
-      el.timerRing.style.stroke = '#4ADE9C';
-      el.timerRing.style.opacity = '1';
+      if (!state.lastRingPaint) {
+        el.timerRing.style.strokeDashoffset = 0;
+        el.timerRing.style.stroke = '#4ADE9C';
+        el.timerRing.style.opacity = '1';
+        state.ringColor = '#4ADE9C';
+        state.lastRingPaint = now;
+      }
       state.rafId = requestAnimationFrame(loop);
       return;
     }
     var p = Math.max(0, 1 - elapsed / state.duration);
-    el.timerRing.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - p));
-    el.timerRing.style.stroke = p > 0.5 ? '#4ADE9C' : (p > 0.22 ? '#FFD93D' : '#FF5C5C');
-    el.timerRing.style.opacity = p < RING_DOT_THRESHOLD ? String(p / RING_DOT_THRESHOLD) : '1';
     if (p <= 0) { handleFail(); return; }
+    // Limit SVG writes on phones. The actual deadline uses a separate
+    // timeout, so the game timing remains exact even if a frame is late.
+    if (now - state.lastRingPaint >= RING_FRAME_MS) {
+      el.timerRing.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - p));
+      var color = p > 0.5 ? '#4ADE9C' : (p > 0.22 ? '#FFD93D' : '#FF5C5C');
+      if (color !== state.ringColor) {
+        el.timerRing.style.stroke = color;
+        state.ringColor = color;
+      }
+      el.timerRing.style.opacity = p < RING_DOT_THRESHOLD ? String(p / RING_DOT_THRESHOLD) : '1';
+      state.lastRingPaint = now;
+    }
     state.rafId = requestAnimationFrame(loop);
   }
 
@@ -845,6 +870,8 @@
     var baseDuration = action === 'COMBO' ? 6000 : (count === 3 ? 4000 : (count === 2 ? 3500 : 3000));
     state.duration = baseDuration * state.speedMultiplier;
     state.startTime = performance.now() + RING_START_DELAY;
+    state.lastRingPaint = 0;
+    state.ringColor = '#4ADE9C';
 
     var sayText;
     if (Array.isArray(action)) {
@@ -857,12 +884,14 @@
     clearTimer();
     render();
     state.rafId = requestAnimationFrame(loop);
+    state.failTimeoutId = setTimeout(handleFail, RING_START_DELAY + state.duration);
   }
 
   function handleFail() {
     if (state.gameState !== 'playing') return;
     clearTimer();
     state.gameState = 'gameover';
+    state.morphingOut = true;
     el.pod.classList.add('wobble');
     setTimeout(function () { el.pod.classList.remove('wobble'); }, 500);
     failSound();
@@ -875,13 +904,17 @@
     }
     el.finalScore.textContent = state.score;
     el.gameoverSub.textContent = isNewHigh ? 'NEW HIGH SCORE!' : ('HIGH SCORE: ' + state.highScore);
-    // Freeze the button before render switches it into the non-playing idle
-    // state. The reverse morph keeps it frozen through the entire handoff.
-    el.confirmBtn.classList.add('morphing-target');
-    // The reverse morph applies the non-playing layout immediately before
-    // measuring the final overlay geometry.
+    // Skip the score-box/title layout change here — it's triggered later,
+    // synced to the exact moment morphButtonIntoOverlay starts growing
+    // the box outward, so both animate together instead of the boxes
+    // visibly shrinking early on their own.
     render(true);
-    morphButtonIntoOverlay(el.gameoverOverlay);
+    // Finish the fail wobble before starting the reverse morph. This also
+    // guarantees its starting circle is measured while fully stationary.
+    setTimeout(function () {
+      el.pod.classList.remove('wobble');
+      morphButtonIntoOverlay(el.gameoverOverlay);
+    }, 500);
   }
 
   function handleConfirm() {
@@ -916,41 +949,43 @@
   // ---------- overlay -> button morph transition ----------
   var FADE_MS = 150;
   var MORPH_MS = 380;
-  // The morph target is the real button itself. It is frozen for the
-  // entire morph, so its measured rect cannot move underneath the overlay.
-  // There is deliberately NO landing nudge or end correction: the overlay
-  // is transformed directly to the button's exact border box, then cross-faded
-  // into the real button at the end. Both occupy the same geometry, so there
-  // is no positional snap during the handoff.
+  var CROSSFADE_MS = 90;
+  // The overlay box and the confirm button underneath don't land
+  // perfectly on top of each other purely from their measured rects —
+  // there's a small persistent vertical gap once the morph finishes.
+  // Nudging the landing spot down by a few px closes it.
+  var BUTTON_LANDING_NUDGE_Y = 0;
 
-  // `transform: scale()` also scales the border. Because the box-to-circle
-  // morph can use different X/Y scale factors, the four sides need separate
-  // compensation; the helper below continuously applies the inverse X/Y
-  // scale so the visible outline remains uniform and matches the real button.
-  function keepBorderVisuallyConstant(targetEl, durationMs) {
-    // A non-uniform scale stretches horizontal and vertical borders by
-    // different amounts. Compensate each axis separately so the morph's
-    // black outline stays the same apparent thickness as the real button,
-    // including at the final circular frame. Using one averaged scale here
-    // was why the top/bottom and sides could look different.
-    var trueBorderPx = parseFloat(getComputedStyle(targetEl).borderTopWidth) || 0;
+  // `transform: scale()` scales EVERYTHING about an element visually,
+  // including its border — so a box with a normal 6px border shrinks to
+  // a ~4px-looking border partway through the morph, then pops back to
+  // a full 6px the instant the real (non-scaled) button/box underneath
+  // is revealed. That pop is what read as jitter around the edges.
+  // This keeps the *visual* border thickness constant throughout the
+  // transform by continuously reading the live, currently-interpolating
+  // scale straight off the computed transform matrix (so it automatically
+  // tracks the CSS transition's actual easing, frame for frame) and
+  // setting an inversely-scaled border-width to compensate.
+  function keepBorderVisuallyConstant(targetEl, durationMs, knownBorderPx) {
+    var trueBorderPx = knownBorderPx || parseFloat(getComputedStyle(targetEl).borderTopWidth) || 0;
     var start = performance.now();
     function frame() {
       var elapsed = performance.now() - start;
       var m = new DOMMatrix(getComputedStyle(targetEl).transform);
       var scaleX = Math.hypot(m.a, m.b) || 1;
       var scaleY = Math.hypot(m.c, m.d) || 1;
-      targetEl.style.borderTopWidth = (trueBorderPx / scaleY) + 'px';
-      targetEl.style.borderBottomWidth = (trueBorderPx / scaleY) + 'px';
       targetEl.style.borderLeftWidth = (trueBorderPx / scaleX) + 'px';
       targetEl.style.borderRightWidth = (trueBorderPx / scaleX) + 'px';
+      targetEl.style.borderTopWidth = (trueBorderPx / scaleY) + 'px';
+      targetEl.style.borderBottomWidth = (trueBorderPx / scaleY) + 'px';
       if (elapsed < durationMs + 20) {
         requestAnimationFrame(frame);
       } else {
-        targetEl.style.borderTopWidth = trueBorderPx + 'px';
-        targetEl.style.borderBottomWidth = trueBorderPx + 'px';
-        targetEl.style.borderLeftWidth = trueBorderPx + 'px';
-        targetEl.style.borderRightWidth = trueBorderPx + 'px';
+        targetEl.style.borderWidth = trueBorderPx + 'px';
+        targetEl.style.borderLeftWidth = '';
+        targetEl.style.borderRightWidth = '';
+        targetEl.style.borderTopWidth = '';
+        targetEl.style.borderBottomWidth = '';
       }
     }
     requestAnimationFrame(frame);
@@ -959,6 +994,17 @@
   function morphOverlayIntoButton(overlayEl, onDone) {
     var children = Array.prototype.slice.call(overlayEl.children);
     overlayEl.style.pointerEvents = 'none';
+
+    // Keep the real button perfectly still and hidden until the final
+    // same-geometry cross-fade. This prevents an idle-bounce frame from
+    // changing the target between measurement and handoff.
+    el.confirmBtn.classList.remove('idle-bounce', 'pressed');
+    el.confirmWrap.classList.remove('pulsing');
+    el.confirmBtn.style.animation = 'none';
+    el.confirmBtn.style.transition = 'none';
+    el.ringSvg.style.transition = 'none';
+    el.confirmBtn.style.opacity = '0';
+    el.ringSvg.style.opacity = '0';
 
     // Reset the timer ring to its "full and green" resting look right
     // away, so as the box shrinks down and reveals the ring underneath,
@@ -974,16 +1020,6 @@
     });
 
     setTimeout(function () {
-      // Freeze the real button before measuring it. In idle state it may be
-      // running the bounce animation, which otherwise makes the target move
-      // during the morph and causes the exact mismatch seen at the bottom.
-      el.confirmBtn.classList.add('morphing-target');
-
-      // Put the playing layout in its final geometry BEFORE measuring either
-      // endpoint. This prevents score/title resizing from moving the target
-      // after the transform has already started.
-      setPlayingLayout(true);
-
       // 2) Morph the (now-empty) box from its current rect into the
       // confirm button's circle, using its actual on-screen position so
       // this works regardless of viewport size. Animating `transform`
@@ -995,7 +1031,7 @@
       var targetRect = el.confirmBtn.getBoundingClientRect();
 
       var dx = (targetRect.left + targetRect.width / 2) - (startRect.left + startRect.width / 2);
-      var dy = (targetRect.top + targetRect.height / 2) - (startRect.top + startRect.height / 2);
+      var dy = (targetRect.top + targetRect.height / 2) - (startRect.top + startRect.height / 2) + BUTTON_LANDING_NUDGE_Y;
       var sx = targetRect.width / startRect.width;
       var sy = targetRect.height / startRect.height;
 
@@ -1015,119 +1051,170 @@
         overlayEl.style.transform = 'translate(' + dx + 'px, ' + dy + 'px) scale(' + sx + ', ' + sy + ')';
         overlayEl.style.borderRadius = '50%';
         keepBorderVisuallyConstant(overlayEl, MORPH_MS);
+        // Kick off the score-box/title "playing" sizing at the exact
+        // same instant the box starts shrinking, using the same
+        // MORPH_MS-long transition, so everything settles together
+        // instead of the boxes jumping to size right after the box
+        // finishes.
+        setPlayingLayout(true);
       });
 
       setTimeout(function () {
-        // 3) Cross-fade the morph into the real button for the final 90ms.
-        // Both elements are already in the exact same measured geometry, so
-        // there is no positional handoff/snap. The cross-fade simply hides
-        // any sub-pixel rasterization difference between the transformed
-        // overlay and the native button border. Keep the button frozen until
-        // the fade is complete so its geometry cannot move underneath us.
-        var CROSSFADE_MS = 90;
-        el.confirmBtn.style.opacity = '0';
-        el.confirmBtn.style.transition = 'opacity ' + CROSSFADE_MS + 'ms ease';
-        overlayEl.style.transition =
-          'transform ' + MORPH_MS + 'ms cubic-bezier(.4,0,.2,1), ' +
-          'border-radius ' + MORPH_MS + 'ms cubic-bezier(.4,0,.2,1), ' +
-          'opacity ' + CROSSFADE_MS + 'ms ease';
-        requestAnimationFrame(function () {
-          overlayEl.style.opacity = '0';
-          el.confirmBtn.style.opacity = '1';
-        });
+        // 3) The main shrink transition has just finished. If the
+        // concurrent score-box/title resize shifted the layout at all
+        // since we last measured (e.g. a 1px rounding difference from
+        // fitTitle's shrink loop), close that residual gap with one more
+        // short, smooth correction instead of leaving a hard snap when
+        // we swap over to the real button underneath.
+        var liveTargetRect = el.confirmBtn.getBoundingClientRect();
+        var liveOverlayRect = overlayEl.getBoundingClientRect();
+        var driftX = (liveTargetRect.left + liveTargetRect.width / 2) - (liveOverlayRect.left + liveOverlayRect.width / 2);
+        var driftY = (liveTargetRect.top + liveTargetRect.height / 2 + BUTTON_LANDING_NUDGE_Y) - (liveOverlayRect.top + liveOverlayRect.height / 2);
+        var CORRECTION_MS = 60;
+        overlayEl.style.transition = 'transform ' + CORRECTION_MS + 'ms ease-out';
+        overlayEl.style.transform = 'translate(' + driftX + 'px, ' + driftY + 'px) ' + overlayEl.style.transform;
 
         setTimeout(function () {
-          overlayEl.style.display = 'none';
-          overlayEl.style.cssText = '';
-          children.forEach(function (c) { c.style.cssText = ''; });
-          el.confirmBtn.style.opacity = '';
-          el.confirmBtn.style.transition = '';
-          el.confirmBtn.classList.remove('morphing-target');
+          // 4) Start the round under the completed circle, then cross-fade
+          // between two circles with identical measured geometry.
           onDone();
-        }, CROSSFADE_MS + 20);
+          overlayEl.style.display = 'flex';
+          overlayEl.style.opacity = '1';
+          el.confirmBtn.style.opacity = '0';
+          el.ringSvg.style.opacity = '0';
+          void overlayEl.offsetWidth;
+          requestAnimationFrame(function () {
+            overlayEl.style.transition = 'opacity ' + CROSSFADE_MS + 'ms ease';
+            el.confirmBtn.style.transition = 'opacity ' + CROSSFADE_MS + 'ms ease';
+            el.ringSvg.style.transition = 'opacity ' + CROSSFADE_MS + 'ms ease';
+            overlayEl.style.opacity = '0';
+            el.confirmBtn.style.opacity = '1';
+            el.ringSvg.style.opacity = '1';
+          });
+          setTimeout(function () {
+            overlayEl.style.cssText = '';
+            overlayEl.style.display = 'none';
+            children.forEach(function (c) { c.style.cssText = ''; });
+            el.confirmBtn.style.cssText = '';
+            el.ringSvg.style.cssText = '';
+          }, CROSSFADE_MS + 20);
+        }, CORRECTION_MS + 20);
       }, MORPH_MS + 40);
     }, FADE_MS + 20);
   }
 
-  // Reverse of morphOverlayIntoButton: the small confirm button morphs
-  // outward into the full overlay box. This is the exact same choreography
-  // as the forward morph, played backwards.
+  // Reverse transition: cross-fade the stationary real button into an
+  // identical empty circle, then grow that same element into the box.
+  // The morphing element is temporarily fixed to the viewport, so the
+  // score/title layout change cannot pull it away from its start point.
   function morphButtonIntoOverlay(overlayEl) {
     var children = Array.prototype.slice.call(overlayEl.children);
-    var CROSSFADE_MS = 90;
+    var startRect = el.confirmBtn.getBoundingClientRect();
 
-    overlayEl.style.pointerEvents = 'none';
+    el.confirmBtn.classList.remove('idle-bounce', 'pressed', 'success');
+    el.confirmWrap.classList.remove('pulsing');
+    el.confirmBtn.style.animation = 'none';
+
+    // Establish the game-over layout while the real button is still in
+    // its old spot. The fixed morph circle will cover this layout handoff.
+    setPlayingLayout(false);
+    overlayEl.style.cssText = '';
     overlayEl.style.display = 'flex';
+    overlayEl.style.pointerEvents = 'none';
+    overlayEl.style.opacity = '0';
+    overlayEl.style.transition = 'none';
+    overlayEl.style.transform = 'none';
     children.forEach(function (c) {
       c.style.transition = 'none';
       c.style.opacity = '0';
     });
-
-    // Freeze the real button before measuring it. The button stays fully
-    // visible underneath the morph for the ENTIRE geometry animation.
-    // This is the exact reverse of the forward morph: morph first, then
-    // cross-fade only after the two shapes have reached identical geometry.
-    el.confirmBtn.classList.add('morphing-target');
-    setPlayingLayout(false);
-
+    void overlayEl.offsetWidth;
     var targetRect = overlayEl.getBoundingClientRect();
-    var startRect = el.confirmBtn.getBoundingClientRect();
-
     var dx = (startRect.left + startRect.width / 2) - (targetRect.left + targetRect.width / 2);
     var dy = (startRect.top + startRect.height / 2) - (targetRect.top + targetRect.height / 2);
     var sx = startRect.width / targetRect.width;
     var sy = startRect.height / targetRect.height;
+    var trueBorderPx = parseFloat(getComputedStyle(overlayEl).borderTopWidth) || 0;
 
-    // Start as an exact circle over the real button. It is invisible at this
-    // point, so the real button remains the only visible element.
-    overlayEl.style.willChange = 'transform, border-radius, opacity';
-    overlayEl.style.transition = 'none';
+    // Pin the overlay's final box rect, then transform that box so its
+    // painted border box exactly matches the gameplay button.
+    overlayEl.style.position = 'fixed';
+    overlayEl.style.inset = 'auto';
+    overlayEl.style.left = targetRect.left + 'px';
+    overlayEl.style.top = targetRect.top + 'px';
+    overlayEl.style.width = targetRect.width + 'px';
+    overlayEl.style.height = targetRect.height + 'px';
+    overlayEl.style.zIndex = '60';
+    overlayEl.style.willChange = 'transform, border-radius';
     overlayEl.style.transform = 'translate(' + dx + 'px, ' + dy + 'px) scale(' + sx + ', ' + sy + ')';
     overlayEl.style.borderRadius = '50%';
-    overlayEl.style.opacity = '0';
+    overlayEl.style.borderLeftWidth = (trueBorderPx / sx) + 'px';
+    overlayEl.style.borderRightWidth = (trueBorderPx / sx) + 'px';
+    overlayEl.style.borderTopWidth = (trueBorderPx / sy) + 'px';
+    overlayEl.style.borderBottomWidth = (trueBorderPx / sy) + 'px';
+
+    el.confirmBtn.style.transition = 'none';
+    el.ringSvg.style.transition = 'none';
+    el.confirmBtn.style.opacity = '1';
+    el.ringSvg.style.opacity = '1';
     void overlayEl.offsetWidth;
 
-    // First do the full circle -> box geometry morph. The real button stays
-    // visible and completely frozen underneath it, eliminating any early
-    // cross-fade or dark flash.
+    // Cross-fade only while both circles have identical geometry. This
+    // prevents the dark flash and makes the reverse morph unmistakable.
     requestAnimationFrame(function () {
+      overlayEl.style.transition = 'opacity ' + CROSSFADE_MS + 'ms ease';
+      el.confirmBtn.style.transition = 'opacity ' + CROSSFADE_MS + 'ms ease';
+      el.ringSvg.style.transition = 'opacity ' + CROSSFADE_MS + 'ms ease';
+      overlayEl.style.opacity = '1';
+      el.confirmBtn.style.opacity = '0';
+      el.ringSvg.style.opacity = '0';
+    });
+
+    setTimeout(function () {
       overlayEl.style.transition =
         'transform ' + MORPH_MS + 'ms cubic-bezier(.4,0,.2,1), ' +
         'border-radius ' + MORPH_MS + 'ms cubic-bezier(.4,0,.2,1)';
       overlayEl.style.transform = 'translate(0px, 0px) scale(1, 1)';
       overlayEl.style.borderRadius = '24px';
-      keepBorderVisuallyConstant(overlayEl, MORPH_MS);
-    });
-
-    setTimeout(function () {
-      // Now the morph is a fully grown box. Only at this exact point do we
-      // cross-fade, matching the forward morph's end-of-morph handoff.
-      el.confirmBtn.style.opacity = '1';
-      el.confirmBtn.style.transition = 'opacity ' + CROSSFADE_MS + 'ms ease';
-      overlayEl.style.transition = 'opacity ' + CROSSFADE_MS + 'ms ease';
-      overlayEl.style.opacity = '0';
-      requestAnimationFrame(function () {
-        el.confirmBtn.style.opacity = '0';
-        overlayEl.style.opacity = '1';
-      });
+      keepBorderVisuallyConstant(overlayEl, MORPH_MS, trueBorderPx);
 
       setTimeout(function () {
+        // The fixed and normal overlay rects are the same, so this is a
+        // style cleanup rather than a positional correction or snap.
+        overlayEl.style.transition = 'none';
+        overlayEl.style.transform = 'none';
+        overlayEl.style.position = '';
+        overlayEl.style.inset = '';
+        overlayEl.style.left = '';
+        overlayEl.style.top = '';
+        overlayEl.style.width = '';
+        overlayEl.style.height = '';
+        overlayEl.style.zIndex = '';
+        overlayEl.style.willChange = '';
+        overlayEl.style.borderWidth = '';
+        overlayEl.style.borderLeftWidth = '';
+        overlayEl.style.borderRightWidth = '';
+        overlayEl.style.borderTopWidth = '';
+        overlayEl.style.borderBottomWidth = '';
+        overlayEl.style.opacity = '1';
+
+        state.morphingOut = false;
+        el.confirmBtn.style.cssText = '';
+        el.ringSvg.style.cssText = '';
         el.timerRing.style.opacity = '1';
-        overlayEl.style.cssText = '';
-        overlayEl.style.display = 'flex';
+        render();
+
         children.forEach(function (c) {
           c.style.transition = 'opacity ' + FADE_MS + 'ms ease';
           c.style.opacity = '1';
         });
-
         setTimeout(function () {
+          overlayEl.style.pointerEvents = '';
+          overlayEl.style.transition = '';
           children.forEach(function (c) { c.style.cssText = ''; });
-          el.confirmBtn.style.opacity = '';
-          el.confirmBtn.style.transition = '';
-          el.confirmBtn.classList.remove('morphing-target');
         }, FADE_MS + 20);
-      }, CROSSFADE_MS + 20);
-    }, MORPH_MS + 40);
+      }, MORPH_MS + 30);
+    }, CROSSFADE_MS + 20);
   }
 
   // ---------- controls ----------
