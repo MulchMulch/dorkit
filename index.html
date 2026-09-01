@@ -26,6 +26,9 @@
        between). Used as the border-width for every black-bordered box
        and button so they all read as the same stroke weight. */
     --dork-border-w: clamp(3px, 1vw, 6px);
+    /* Score cards use a deliberately lighter outline: exactly 75% of
+       the shared border scale, without changing any other game border. */
+    --dork-score-border-w: clamp(2.25px, 0.75vw, 4.5px);
   }
   /* Oversized fixed background element — deliberately bigger than the
      viewport in every direction and pinned with position:fixed so that
@@ -189,7 +192,7 @@
   .dork-subbar { position: relative; display: flex; align-items: center; justify-content: center; gap: 28px; margin-top: 18px; }
   .dork-readout {
     font-family: 'Fredoka', sans-serif; font-weight: 700;
-    background: #FFF8ED; border: var(--dork-border-w) solid #3B230F; box-shadow: 3px 3px 0 rgba(59,35,15,0.3);
+    background: #FFF8ED; border: var(--dork-score-border-w) solid #3B230F; box-shadow: 3px 3px 0 rgba(59,35,15,0.3);
     padding: 6px 12px; border-radius: 16px; font-size: clamp(14px, 3.2vw, 18px);
     transition: padding 380ms cubic-bezier(.4,0,.2,1), font-size 380ms cubic-bezier(.4,0,.2,1), box-shadow 380ms cubic-bezier(.4,0,.2,1);
   }
@@ -283,16 +286,17 @@
   .dork-confirm.playing { cursor: pointer; }
   .dork-confirm.idle-bounce { animation: bounceIdle 1.8s ease-in-out infinite; }
   .dork-confirm.pressed { transform: none; }
-  .dork-confirm.success { animation: popIn 0.3s ease; }
+  .dork-confirm.success { animation: coverRing 0.38s cubic-bezier(.2,.8,.2,1); }
   .dork-confirm.long-label { font-size: clamp(20px, 5.4vmin, 40px); overflow-wrap: anywhere; word-break: normal; }
   .dork-confirm.combo {
     box-shadow: 0 0 16px 7px rgba(255,215,0,0.52);
     animation: none;
   }
-  .dork-confirm.combo.success { animation: popIn 0.3s ease; }
+  .dork-confirm.combo.success { animation: coverRing 0.38s cubic-bezier(.2,.8,.2,1); }
 
   .confetti-piece {
     position: absolute; left: 50%; top: 50%; z-index: 40;
+    margin-left: -0.5em; margin-top: -0.5em;
     font-size: clamp(48px, 9vmin, 84px); pointer-events: none;
     will-change: transform, opacity;
   }
@@ -349,9 +353,9 @@
     0%, 100% { transform: scale(1); }
     50% { transform: scale(1.025); }
   }
-  @keyframes popIn {
-    0% { transform: scale(0.7); }
-    60% { transform: scale(1.12); }
+  @keyframes coverRing {
+    0% { transform: scale(1); }
+    42%, 56% { transform: scale(1.22); }
     100% { transform: scale(1); }
   }
   @keyframes wobbleFail {
@@ -511,6 +515,7 @@
     scorePulseAnimation: null,
     ringFadeStartTime: 0,
     morphingOut: false,
+    roundToken: 0,
     startTime: 0,
     duration: 3400,
     speedMultiplier: 1
@@ -682,34 +687,58 @@
     cachedVoice = pickVoice();
     window.speechSynthesis.onvoiceschanged = function () { cachedVoice = pickVoice(); };
   }
-  function speak(text) {
-    if (state.muted) return;
+  function speak(text, onDone) {
+    var finished = false;
+    var fallbackId = null;
+    function finish() {
+      if (finished) return;
+      finished = true;
+      if (fallbackId) clearTimeout(fallbackId);
+      if (typeof onDone === 'function') onDone();
+    }
+    if (state.muted) { finish(); return; }
     try {
-      if (!window.speechSynthesis) return;
+      if (!window.speechSynthesis || typeof SpeechSynthesisUtterance === 'undefined') { finish(); return; }
       window.speechSynthesis.cancel();
       var u = new SpeechSynthesisUtterance(text);
       // Fast, upbeat, hyped-up delivery — quick clip with a slightly
       // raised pitch for extra enthusiasm.
       u.rate = 1.1; u.pitch = 1.05; u.volume = 1;
       if (cachedVoice) u.voice = cachedVoice;
+      u.onend = finish;
+      u.onerror = finish;
       window.speechSynthesis.speak(u);
-    } catch (e) {}
+      // Some mobile WebKit versions occasionally omit the completion
+      // event. This only releases the timer if speech has stalled well
+      // beyond its expected reading time, so a round can never hang.
+      var words = String(text).trim().split(/\s+/).filter(Boolean).length;
+      fallbackId = setTimeout(finish, Math.min(10000, Math.max(1800, words * 650 + 1200)));
+    } catch (e) { finish(); }
   }
 
-  function popConfetti(action) {
+  function popConfetti(action, origin) {
     var meta = META[action] || {};
     var pool = meta.confetti && meta.confetti.length ? meta.confetti : ["🎉", "✨"];
+    var podRect = el.pod.getBoundingClientRect();
+    var buttonRect = el.confirmBtn.getBoundingClientRect();
+    var originX = origin && isFinite(origin.clientX) ? origin.clientX - podRect.left : buttonRect.left + buttonRect.width / 2 - podRect.left;
+    var originY = origin && isFinite(origin.clientY) ? origin.clientY - podRect.top : buttonRect.top + buttonRect.height / 2 - podRect.top;
     var fragment = document.createDocumentFragment();
     var pieces = [];
-    for (var i = 0; i < 10; i++) {
+    // v81 emitted 10 pieces. Thirteen is the nearest whole-piece count
+    // to a 25% increase, and the doubled multiplier sends every piece
+    // 100% farther than v81's already-expanded burst.
+    for (var i = 0; i < 13; i++) {
       var angle = Math.random() * Math.PI * 2;
-      var dist = 70 + Math.random() * 50;
+      var dist = (70 + Math.random() * 50) * 2.5;
       var dx = Math.cos(angle) * dist;
       var dy = Math.sin(angle) * dist;
       var rot = (Math.random() - 0.5) * 240;
       var span = document.createElement('span');
       span.className = 'confetti-piece';
       span.textContent = pool[Math.floor(Math.random() * pool.length)];
+      span.style.left = originX + 'px';
+      span.style.top = originY + 'px';
       span.style.setProperty('--dx', dx + 'px');
       span.style.setProperty('--dy', dy + 'px');
       span.style.setProperty('--rot', rot + 'deg');
@@ -741,12 +770,24 @@
     }, 1100);
   }
 
+  function pickWeightedAction(pool) {
+    if (!pool.length) return null;
+    var totalWeight = pool.reduce(function (total, action) {
+      return total + (action === 'WILLY' ? 0.5 : 1);
+    }, 0);
+    var roll = Math.random() * totalWeight;
+    for (var i = 0; i < pool.length; i++) {
+      roll -= pool[i] === 'WILLY' ? 0.5 : 1;
+      if (roll < 0) return pool[i];
+    }
+    return pool[pool.length - 1];
+  }
+
   function pickOneAction(excluded) {
-    var action;
-    do {
-      action = REGULAR_ACTIONS[Math.floor(Math.random() * REGULAR_ACTIONS.length)];
-    } while (action === excluded && REGULAR_ACTIONS.length > 1);
-    return action;
+    var pool = REGULAR_ACTIONS.filter(function (action) {
+      return action !== excluded || REGULAR_ACTIONS.length === 1;
+    });
+    return pickWeightedAction(pool);
   }
 
   function pickDistinctActions(count, prevAction) {
@@ -757,15 +798,20 @@
 
     var picked = [];
     while (picked.length < count && pool.length) {
-      var index = Math.floor(Math.random() * pool.length);
-      picked.push(pool.splice(index, 1)[0]);
+      var action = pickWeightedAction(pool);
+      picked.push(action);
+      pool.splice(pool.indexOf(action), 1);
     }
 
     return picked;
   }
 
-  function pickAction(prevAction) {
-    var roll = Math.random();
+  function pickAction(prevAction, completedCommands) {
+    var comboUnlocked = completedCommands >= 5;
+    // Before five successful commands, sample only the regular 97% of
+    // the distribution. This preserves the relative single/double/triple
+    // odds without letting the long COMBO command appear early.
+    var roll = Math.random() * (comboUnlocked ? 1 : 0.97);
 
     // 50% single, 37% double, 10% triple, 3% long command.
     if (roll < 0.50) {
@@ -873,12 +919,12 @@
     }
   }
 
-  function clearTimer() {
+  function clearTimer(keepRingVisible) {
     if (state.rafId) cancelAnimationFrame(state.rafId);
     if (state.failTimeoutId) clearTimeout(state.failTimeoutId);
     state.rafId = null;
     state.failTimeoutId = null;
-    clearTimerRing();
+    if (!keepRingVisible) clearTimerRing();
   }
 
   var RING_START_DELAY = 200; // ms — hold the ring full before it starts draining
@@ -976,25 +1022,52 @@
   }
 
   function startRingTimer() {
+    if (state.rafId) cancelAnimationFrame(state.rafId);
+    state.rafId = null;
     sizeTimerCanvas();
-    clearTimerRing();
-    state.ringFadeStartTime = performance.now();
+    // The waiting ring is already visible. Keep it fully green through
+    // the handoff so speech completion starts motion, not a second fade.
+    drawTimerRing(1, '#35E892', 1);
+    state.startTime = performance.now() + RING_START_DELAY;
+    state.ringFadeStartTime = performance.now() - RING_FADE_IN_MS;
     state.rafId = requestAnimationFrame(loop);
     state.failTimeoutId = setTimeout(handleFail, RING_START_DELAY + state.duration);
   }
 
-  function nextRound(nextScore) {
+  function showWaitingRing(roundToken) {
+    sizeTimerCanvas();
+    clearTimerRing();
+    var fadeStart = performance.now();
+    function fadeInWaitingRing(now) {
+      if (state.gameState !== 'playing' || state.attempted || roundToken !== state.roundToken) return;
+      var visibility = Math.min(1, Math.max(0, (now - fadeStart) / RING_FADE_IN_MS));
+      drawTimerRing(1, '#35E892', visibility);
+      if (visibility < 1) {
+        state.rafId = requestAnimationFrame(fadeInWaitingRing);
+      } else {
+        state.rafId = null;
+      }
+    }
+    state.rafId = requestAnimationFrame(fadeInWaitingRing);
+  }
+
+  function nextRound(nextScore, ringIsAlreadyFull) {
     state.attempted = false;
+    var roundToken = ++state.roundToken;
     var action = pickAction(
-      Array.isArray(state.currentAction) ? state.currentAction[state.currentAction.length - 1] : state.currentAction
+      Array.isArray(state.currentAction) ? state.currentAction[state.currentAction.length - 1] : state.currentAction,
+      Number(nextScore) || 0
     );
     state.currentAction = action;
 
     var count = Array.isArray(action) ? action.length : (action === 'COMBO' ? 4 : 1);
-    // Exact round durations: single 3s, double 4s, triple 5s, long 6s.
-    var baseDuration = action === 'COMBO' ? 6000 : (count === 3 ? 4000 : (count === 2 ? 3500 : 3000));
+    // Every action is 0.5s shorter than v82: single 2.5s, double 3s,
+    // triple 3.5s, and the long COMBO 5.5s. Any round containing WET
+    // WILLY receives one additional second before normal speed scaling.
+    var baseDuration = action === 'COMBO' ? 5500 : (count === 3 ? 3500 : (count === 2 ? 3000 : 2500));
+    var containsWetWilly = action === 'WILLY' || (Array.isArray(action) && action.indexOf('WILLY') !== -1);
+    if (containsWetWilly) baseDuration += 1000;
     state.duration = baseDuration * state.speedMultiplier;
-    state.startTime = performance.now() + RING_START_DELAY;
 
     var sayText;
     if (Array.isArray(action)) {
@@ -1002,11 +1075,21 @@
     } else {
       sayText = META[action].say;
     }
-    speak(sayText);
-
-    clearTimer();
+    clearTimer(ringIsAlreadyFull);
     render();
-    startRingTimer();
+    // Between successful actions the full ring has already been painted
+    // while hidden by the expanded button, so leave it untouched. The
+    // initial round still performs the normal short ring fade-in.
+    if (ringIsAlreadyFull) {
+      drawTimerRing(1, '#35E892', 1);
+    } else {
+      showWaitingRing(roundToken);
+    }
+    speak(sayText, function () {
+      // A cancelled older utterance must never start a newer round's timer.
+      if (state.gameState !== 'playing' || state.attempted || roundToken !== state.roundToken) return;
+      startRingTimer();
+    });
   }
 
   function handleFail() {
@@ -1039,20 +1122,77 @@
     }, 500);
   }
 
-  function handleConfirm() {
+  function animateButtonOverRing(onCovered, onDone) {
+    var covered = false;
+    var done = false;
+    function coverOnce() {
+      if (covered) return;
+      covered = true;
+      onCovered();
+    }
+    function doneOnce() {
+      if (done) return;
+      done = true;
+      onDone();
+    }
+
+    // Split the motion into two animations so the canvas reset is tied to
+    // the actual end of the grow phase, rather than a timer that can drift
+    // under load on mobile Safari.
+    if (typeof el.confirmBtn.animate === 'function') {
+      var grow = el.confirmBtn.animate([
+        { transform: 'scale(1)' },
+        { transform: 'scale(1.22)' }
+      ], { duration: 160, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' });
+      grow.finished.then(function () {
+        coverOnce();
+        requestAnimationFrame(function () {
+          var shrink = el.confirmBtn.animate([
+            { transform: 'scale(1.22)' },
+            { transform: 'scale(1)' }
+          ], { duration: 220, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'forwards' });
+          grow.cancel();
+          shrink.finished.then(function () {
+            shrink.cancel();
+            doneOnce();
+          }).catch(function () {
+            shrink.cancel();
+            doneOnce();
+          });
+        });
+      }).catch(function () {
+        coverOnce();
+        doneOnce();
+      });
+      return;
+    }
+
+    // Fallback for older browsers: the CSS keyframes include a covered
+    // hold, with the reset scheduled inside that hold.
+    el.confirmBtn.classList.add('success');
+    setTimeout(coverOnce, 175);
+    setTimeout(doneOnce, 400);
+  }
+
+  function handleConfirm(origin) {
     if (state.gameState !== 'playing') return;
     if (state.attempted) return;
     state.attempted = true;
     var completedAction = state.currentAction;
-    clearTimer();
+    var pressOrigin = origin && isFinite(origin.clientX) && isFinite(origin.clientY) ? {
+      clientX: origin.clientX,
+      clientY: origin.clientY
+    } : null;
+    // Stop countdown/failure scheduling but preserve the exact remaining
+    // ring on the canvas until the button has grown over it.
+    clearTimer(true);
 
     // Apply the visual response first. The COMBO fanfare and confetti are
     // deliberately deferred until after the next paint so they cannot
     // delay the press feedback.
-    el.confirmBtn.classList.add('success', 'pressed');
+    el.confirmBtn.classList.add('pressed');
     el.ringSvg.classList.add('pressed');
     setTimeout(function () { el.confirmBtn.classList.remove('pressed'); el.ringSvg.classList.remove('pressed'); }, 150);
-    setTimeout(function () { el.confirmBtn.classList.remove('success'); }, 350);
     state.score += 1;
     state.speedMultiplier *= 0.99; // 1% faster each success
     var ns = state.score;
@@ -1073,11 +1213,20 @@
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
         successSound(completedAction);
-        popConfetti(Array.isArray(completedAction) ? completedAction[0] : completedAction);
+        popConfetti(Array.isArray(completedAction) ? completedAction[0] : completedAction, pressOrigin);
         if (ns > 0 && ns % 5 === 0) showComboMilestone(ns);
       });
     });
-    setTimeout(function () { nextRound(ns); }, 260);
+    animateButtonOverRing(function () {
+      // This draw happens only after the button fully covers the timer.
+      drawTimerRing(1, '#35E892', 1);
+    }, function () {
+      el.confirmBtn.classList.remove('success', 'pressed');
+      el.ringSvg.classList.remove('pressed');
+      // The next action and speech begin after the shrink has revealed
+      // the already-full ring; its countdown still waits for speech end.
+      nextRound(ns, true);
+    });
   }
 
   function startGame() {
@@ -1149,8 +1298,9 @@
     el.confirmBtn.style.opacity = '0';
     el.ringSvg.style.opacity = '0';
 
-    // Keep the ring empty until the new round starts; startRingTimer()
-    // draws it with a short fade-in during the final handoff.
+    // Keep the ring empty during the geometry morph. Once the new round
+    // starts, showWaitingRing() fades in a full green ring immediately,
+    // while its countdown remains paused for the spoken command.
     clearTimerRing();
 
     // 1) Quickly fade out all the overlay's content.
@@ -1220,15 +1370,16 @@
           onDone();
           overlayEl.style.display = 'flex';
           overlayEl.style.opacity = '1';
-          el.confirmBtn.style.opacity = '0';
+          // Keep an opaque button underneath the fading morph circle.
+          // Cross-fading both cream layers produced a 25%-transparent
+          // midpoint that looked like a brief dark blink.
+          el.confirmBtn.style.opacity = '1';
           el.ringSvg.style.opacity = '0';
           void overlayEl.offsetWidth;
           requestAnimationFrame(function () {
             overlayEl.style.transition = 'opacity ' + CROSSFADE_MS + 'ms ease';
-            el.confirmBtn.style.transition = 'opacity ' + CROSSFADE_MS + 'ms ease';
             el.ringSvg.style.transition = 'opacity ' + CROSSFADE_MS + 'ms ease';
             overlayEl.style.opacity = '0';
-            el.confirmBtn.style.opacity = '1';
             el.ringSvg.style.opacity = '1';
           });
           setTimeout(function () {
@@ -1369,7 +1520,8 @@
     if (state.gameState !== 'playing') return;
     e.preventDefault();
     lastTapTime = Date.now();
-    handleConfirm();
+    var touch = e.touches[0] || e.changedTouches[0];
+    handleConfirm(touch ? { clientX: touch.clientX, clientY: touch.clientY } : null);
   }, { passive: false });
   document.addEventListener('click', function (e) {
     if (state.gameState !== 'playing') return;
@@ -1377,7 +1529,7 @@
       e.preventDefault();
       return;
     }
-    handleConfirm();
+    handleConfirm({ clientX: e.clientX, clientY: e.clientY });
   }, true);
 
   // Fully block scroll/drag gestures everywhere on the page (not just
