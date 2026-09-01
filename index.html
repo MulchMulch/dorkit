@@ -177,7 +177,7 @@
       0.0000em 0.0850em 0 #000;;
     display: flex; align-items: center; gap: 10px;
     white-space: nowrap; max-width: 100%;
-    transition: font-size 220ms ease;
+    transition: font-size 380ms cubic-bezier(.4,0,.2,1);
   }
   .dork-wiggle {
     display: inline-block;
@@ -191,7 +191,7 @@
     font-family: 'Fredoka', sans-serif; font-weight: 700;
     background: #FFF8ED; border: var(--dork-border-w) solid #3B230F; box-shadow: 3px 3px 0 rgba(59,35,15,0.3);
     padding: 6px 12px; border-radius: 16px; font-size: clamp(14px, 3.2vw, 18px);
-    transition: padding 220ms ease, font-size 220ms ease, box-shadow 220ms ease;
+    transition: padding 380ms cubic-bezier(.4,0,.2,1), font-size 380ms cubic-bezier(.4,0,.2,1), box-shadow 380ms cubic-bezier(.4,0,.2,1);
   }
   .dork-readout b { color: #FF5FA2; }
   .dork-readout.big {
@@ -744,7 +744,21 @@
     document.fonts.ready.then(fitTitle).catch(function () {});
   }
 
-  function render() {
+  // The parts of "playing vs. not playing" that change the page's overall
+  // layout height (score box padding/font-size, title sizing) — split out
+  // from render() so a morph can trigger this at the exact moment its own
+  // transform animation starts, instead of it landing as a separate step
+  // right before or right after. Both this and the box-morph transform
+  // now run over the same MORPH_MS duration, so everything settles at
+  // the same time with nothing left to shift afterward.
+  function setPlayingLayout(playing) {
+    el.scoreBox.classList.toggle('big', playing);
+    el.highScoreBox.classList.toggle('big', playing);
+    el.dorkTitle.classList.toggle('playing', playing);
+    fitTitle();
+  }
+
+  function render(skipPlayingLayout) {
     el.scoreReadout.textContent = String(state.score).padStart(2, '0');
 
     var playing = state.gameState === 'playing';
@@ -752,10 +766,7 @@
     el.confirmWrap.classList.toggle('pulsing', playing);
     el.confirmBtn.classList.toggle('idle-bounce', !playing);
     el.confirmBtn.classList.toggle('combo', playing && state.currentAction === 'COMBO');
-    el.scoreBox.classList.toggle('big', playing);
-    el.highScoreBox.classList.toggle('big', playing);
-    el.dorkTitle.classList.toggle('playing', playing);
-    fitTitle();
+    if (!skipPlayingLayout) setPlayingLayout(playing);
 
     if (playing && state.currentAction) {
       if (Array.isArray(state.currentAction)) {
@@ -860,7 +871,11 @@
     }
     el.finalScore.textContent = state.score;
     el.gameoverSub.textContent = isNewHigh ? 'NEW HIGH SCORE!' : ('HIGH SCORE: ' + state.highScore);
-    render();
+    // Skip the score-box/title layout change here — it's triggered later,
+    // synced to the exact moment morphButtonIntoOverlay starts growing
+    // the box outward, so both animate together instead of the boxes
+    // visibly shrinking early on their own.
+    render(true);
     morphButtonIntoOverlay(el.gameoverOverlay);
   }
 
@@ -896,6 +911,33 @@
   // ---------- overlay -> button morph transition ----------
   var FADE_MS = 150;
   var MORPH_MS = 380;
+
+  // `transform: scale()` scales EVERYTHING about an element visually,
+  // including its border — so a box with a normal 6px border shrinks to
+  // a ~4px-looking border partway through the morph, then pops back to
+  // a full 6px the instant the real (non-scaled) button/box underneath
+  // is revealed. That pop is what read as jitter around the edges.
+  // This keeps the *visual* border thickness constant throughout the
+  // transform by continuously reading the live, currently-interpolating
+  // scale straight off the computed transform matrix (so it automatically
+  // tracks the CSS transition's actual easing, frame for frame) and
+  // setting an inversely-scaled border-width to compensate.
+  function keepBorderVisuallyConstant(targetEl, durationMs) {
+    var trueBorderPx = parseFloat(getComputedStyle(targetEl).borderTopWidth) || 0;
+    var start = performance.now();
+    function frame() {
+      var elapsed = performance.now() - start;
+      var m = new DOMMatrix(getComputedStyle(targetEl).transform);
+      var scale = (Math.hypot(m.a, m.b) + Math.hypot(m.c, m.d)) / 2 || 1;
+      targetEl.style.borderWidth = (trueBorderPx / scale) + 'px';
+      if (elapsed < durationMs + 20) {
+        requestAnimationFrame(frame);
+      } else {
+        targetEl.style.borderWidth = trueBorderPx + 'px';
+      }
+    }
+    requestAnimationFrame(frame);
+  }
 
   function morphOverlayIntoButton(overlayEl, onDone) {
     var children = Array.prototype.slice.call(overlayEl.children);
@@ -945,14 +987,37 @@
           'border-radius ' + MORPH_MS + 'ms cubic-bezier(.4,0,.2,1)';
         overlayEl.style.transform = 'translate(' + dx + 'px, ' + dy + 'px) scale(' + sx + ', ' + sy + ')';
         overlayEl.style.borderRadius = '50%';
+        keepBorderVisuallyConstant(overlayEl, MORPH_MS);
+        // Kick off the score-box/title "playing" sizing at the exact
+        // same instant the box starts shrinking, using the same
+        // MORPH_MS-long transition, so everything settles together
+        // instead of the boxes jumping to size right after the box
+        // finishes.
+        setPlayingLayout(true);
       });
 
       setTimeout(function () {
-        // 3) Hand off to the real game button/ring underneath, then begin.
-        overlayEl.style.display = 'none';
-        overlayEl.style.cssText = '';
-        children.forEach(function (c) { c.style.cssText = ''; });
-        onDone();
+        // 3) The main shrink transition has just finished. If the
+        // concurrent score-box/title resize shifted the layout at all
+        // since we last measured (e.g. a 1px rounding difference from
+        // fitTitle's shrink loop), close that residual gap with one more
+        // short, smooth correction instead of leaving a hard snap when
+        // we swap over to the real button underneath.
+        var liveTargetRect = el.confirmBtn.getBoundingClientRect();
+        var liveOverlayRect = overlayEl.getBoundingClientRect();
+        var driftX = (liveTargetRect.left + liveTargetRect.width / 2) - (liveOverlayRect.left + liveOverlayRect.width / 2);
+        var driftY = (liveTargetRect.top + liveTargetRect.height / 2) - (liveOverlayRect.top + liveOverlayRect.height / 2);
+        var CORRECTION_MS = 60;
+        overlayEl.style.transition = 'transform ' + CORRECTION_MS + 'ms ease-out';
+        overlayEl.style.transform = 'translate(' + driftX + 'px, ' + driftY + 'px) ' + overlayEl.style.transform;
+
+        setTimeout(function () {
+          // 4) Hand off to the real game button/ring underneath.
+          overlayEl.style.display = 'none';
+          overlayEl.style.cssText = '';
+          children.forEach(function (c) { c.style.cssText = ''; });
+          onDone();
+        }, CORRECTION_MS + 20);
       }, MORPH_MS + 40);
     }, FADE_MS + 20);
   }
@@ -963,13 +1028,18 @@
     var children = Array.prototype.slice.call(overlayEl.children);
     overlayEl.style.pointerEvents = 'none';
     overlayEl.style.display = 'flex';
-
-    // 1) Hide the overlay's content instantly (no fade yet) and read its
-    // natural on-screen rect — this is where it needs to end up.
     children.forEach(function (c) {
       c.style.transition = 'none';
       c.style.opacity = '0';
     });
+
+    // 1) Read the overlay's natural on-screen rect — this is where it
+    // needs to end up — and the confirm button's current rect. This has
+    // to happen synchronously, in the same tick as setting display:flex
+    // above: render() was called with skipPlayingLayout=true just before
+    // this, so there's no pending async resize to wait out anymore, and
+    // waiting even one frame here let the browser paint the box at full
+    // size for a frame before snapping down — a visible flash.
     var targetRect = overlayEl.getBoundingClientRect();
     var startRect = el.confirmBtn.getBoundingClientRect();
 
@@ -978,9 +1048,10 @@
     var sx = startRect.width / targetRect.width;
     var sy = startRect.height / targetRect.height;
 
-    // 2) Snap the (still-empty) overlay box to sit exactly on top of the
-    // confirm button — same position, same size, round — before anything
-    // paints, so the transition starts seamlessly from the button.
+    // 2) Snap the (still-empty) overlay box to sit exactly on top of
+    // the confirm button — same position, same size, round — before
+    // anything paints, so the transition starts seamlessly from the
+    // button.
     overlayEl.style.willChange = 'transform, border-radius';
     overlayEl.style.transition = 'none';
     overlayEl.style.transform = 'translate(' + dx + 'px, ' + dy + 'px) scale(' + sx + ', ' + sy + ')';
@@ -989,9 +1060,9 @@
 
     // Mirror the forward morph's timing exactly: it pauses for
     // FADE_MS+20 (while its content fades out) before the transform
-    // starts. Here nothing needs to fade out yet, but we still pause the
-    // same amount before kicking off the grow so both morphs take the
-    // same total time and feel like the same speed.
+    // starts. Here nothing needs to fade out yet, but we still pause
+    // the same amount before kicking off the grow so both morphs take
+    // the same total time and feel like the same speed.
     setTimeout(function () {
       requestAnimationFrame(function () {
         overlayEl.style.transition =
@@ -999,6 +1070,12 @@
           'border-radius ' + MORPH_MS + 'ms cubic-bezier(.4,0,.2,1)';
         overlayEl.style.transform = 'translate(0px, 0px) scale(1, 1)';
         overlayEl.style.borderRadius = '24px';
+        keepBorderVisuallyConstant(overlayEl, MORPH_MS);
+        // Kick off the score-box/title "not playing" sizing at the
+        // exact same instant the box starts growing, using the same
+        // MORPH_MS-long transition, so everything settles together
+        // instead of the boxes having already jumped to size earlier.
+        setPlayingLayout(false);
       });
 
       setTimeout(function () {
