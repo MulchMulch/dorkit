@@ -296,13 +296,13 @@
   .dork-confirm.playing { cursor: pointer; }
   .dork-confirm.idle-bounce { animation: bounceIdle 1.8s ease-in-out infinite; }
   .dork-confirm.pressed { transform: none; }
-  .dork-confirm.success { animation: coverRing 0.38s cubic-bezier(.2,.8,.2,1); }
+  .dork-confirm.success { animation: coverRing 0.45s cubic-bezier(.2,.8,.2,1); }
   .dork-confirm.long-label { font-size: clamp(20px, 5.4vmin, 40px); overflow-wrap: anywhere; word-break: normal; }
   .dork-confirm.combo {
     box-shadow: 0 0 16px 7px rgba(255,215,0,0.52);
     animation: none;
   }
-  .dork-confirm.combo.success { animation: coverRing 0.38s cubic-bezier(.2,.8,.2,1); }
+  .dork-confirm.combo.success { animation: coverRing 0.45s cubic-bezier(.2,.8,.2,1); }
 
   .confetti-piece {
     position: absolute; left: 50%; top: 50%; z-index: 40;
@@ -321,6 +321,23 @@
     transform-origin: center center;
     will-change: transform, opacity;
     animation: comboMilestonePop 0.95s cubic-bezier(.2,.8,.2,1) forwards;
+  }
+  .combo-milestone::before,
+  .combo-milestone::after {
+    content: "✦";
+    position: absolute;
+    color: #FFF8ED;
+    font-size: 0.58em;
+    line-height: 1;
+    -webkit-text-stroke: 0;
+    text-shadow: 0 0 5px rgba(255,217,61,0.9);
+    opacity: 0;
+    animation: comboSparkleTwinkle 0.72s ease-out forwards;
+  }
+  .combo-milestone::before { left: -0.85em; top: -0.18em; }
+  .combo-milestone::after {
+    right: -0.85em; bottom: -0.12em;
+    animation-delay: 0.11s;
   }
 
   .dork-overlay {
@@ -384,6 +401,12 @@
     22%  { transform: translate(-50%, 0) scale(1.14) rotate(2deg); opacity: 1; }
     62%  { transform: translate(-50%, -5px) scale(1) rotate(0deg); opacity: 1; }
     100% { transform: translate(-50%, -38px) scale(0.96) rotate(0deg); opacity: 0; }
+  }
+  @keyframes comboSparkleTwinkle {
+    0%   { transform: scale(0.25) rotate(-25deg); opacity: 0; }
+    28%  { transform: scale(1.2) rotate(8deg); opacity: 1; }
+    62%  { transform: scale(0.82) rotate(22deg); opacity: 0.85; }
+    100% { transform: scale(0.25) rotate(42deg); opacity: 0; }
   }
   @keyframes scorePulse {
     0%   { transform: scale(1); }
@@ -981,16 +1004,6 @@
   // still crisp for this thick stroke on iPhone, while using only ~39% of
   // the pixels of the former 2x canvas.
   var RING_MAX_DPR = IS_IOS ? 1.25 : 2;
-  // Hoisted once instead of rebuilding five objects and a callback closure
-  // on every frame. That garbage was collected during short phone timers,
-  // which matched the reported second-half hitch.
-  var RING_HALO_BANDS = [
-    { width: 0.12, opacity: 0.015, pad: 0.085 },
-    { width: 0.108, opacity: 0.03, pad: 0.065 },
-    { width: 0.096, opacity: 0.05, pad: 0.048 },
-    { width: 0.084, opacity: 0.075, pad: 0.032 },
-    { width: 0.072, opacity: 0.11, pad: 0.016 }
-  ];
   // Precompute the full temporal color ramp once. Each countdown frame
   // performs only an array lookup, avoiding both the old hard color-state
   // switches and new per-frame rgb-string allocations on Safari.
@@ -1053,24 +1066,8 @@
     var startAngle = -Math.PI / 2;
     var endAngle = startAngle + Math.PI * 2 * Math.min(1, progress);
 
-    // The gradient now extends 3% of the original ring size beyond the
-    // bright core—exactly double v79. Butt-capped, progressively inset
-    // halo arcs taper underneath the colored round cap, eliminating the
-    // vertical black end-cap line without using blur or filters.
-    ringCtx.strokeStyle = '#000000';
-    ringCtx.lineCap = 'butt';
-    var isNearlyFull = progress > 0.98;
-    for (var bandIndex = 0; bandIndex < RING_HALO_BANDS.length; bandIndex++) {
-      var band = RING_HALO_BANDS[bandIndex];
-      var pad = isNearlyFull ? 0 : band.pad;
-      if (endAngle - startAngle <= pad * 2) continue;
-      ringCtx.beginPath();
-      ringCtx.arc(center, center, radius, startAngle + pad, endAngle - pad, false);
-      ringCtx.globalAlpha = visibility * band.opacity;
-      ringCtx.lineWidth = base * band.width;
-      ringCtx.stroke();
-    }
-
+    // Draw only the solid colored countdown stroke. The former stack of
+    // translucent black arcs created the soft gradient/halo around it.
     ringCtx.beginPath();
     ringCtx.arc(center, center, radius, startAngle, endAngle, false);
     ringCtx.lineCap = 'round';
@@ -1259,14 +1256,14 @@
       var grow = el.confirmBtn.animate([
         { transform: 'scale(1)' },
         { transform: 'scale(1.22)' }
-      ], { duration: 160, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' });
+      ], { duration: 190, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' });
       grow.finished.then(function () {
         coverOnce();
         requestAnimationFrame(function () {
           var shrink = el.confirmBtn.animate([
             { transform: 'scale(1.22)' },
             { transform: 'scale(1)' }
-          ], { duration: 220, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'forwards' });
+          ], { duration: 260, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'forwards' });
           grow.cancel();
           shrink.finished.then(function () {
             shrink.cancel();
@@ -1286,8 +1283,8 @@
     // Fallback for older browsers: the CSS keyframes include a covered
     // hold, with the reset scheduled inside that hold.
     el.confirmBtn.classList.add('success');
-    setTimeout(coverOnce, 175);
-    setTimeout(doneOnce, 400);
+    setTimeout(coverOnce, 200);
+    setTimeout(doneOnce, 470);
   }
 
   function handleConfirm(origin) {
