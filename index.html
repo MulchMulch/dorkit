@@ -248,6 +248,11 @@
   .dork-ring.pressed { transform: none; }
   .dork-ring-fg {
     display: block; width: 100%; height: 100%;
+    /* Keep Safari from merging the frequently repainted timer canvas into
+       the much more expensive text/background paint layer. */
+    transform: translateZ(0);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
   }
 
   /* The reverse morph uses a viewport-fixed tracker plus a nested shell.
@@ -519,6 +524,7 @@
     failTimeoutId: null,
     scorePulseAnimation: null,
     ringFadeStartTime: 0,
+    timerRunning: false,
     morphingOut: false,
     roundToken: 0,
     startTime: 0,
@@ -834,10 +840,23 @@
 
   // Keeps "DORK IT" centered on one line: reset to the CSS-driven size,
   // then shrink in px steps only if it would actually overflow/wrap.
+  var fitTitleRafId = null;
+  var titleFitPending = false;
+  var scrollResetPending = false;
+
   function fitTitle() {
     var titleEl = el.dorkTitle;
     var container = el.dorkHeader;
     if (!titleEl || !container) return;
+    // iOS Safari emits viewport resize events while its browser chrome
+    // settles after a tap. Never let title measurement interrupt the live
+    // countdown; service the request during the spoken lead-in instead.
+    if (state.timerRunning) {
+      titleFitPending = true;
+      return;
+    }
+    if (fitTitleRafId) return;
+    titleFitPending = false;
     // The title has a CSS transition on font-size for the idle->playing
     // size change. That transition interferes with this synchronous
     // shrink loop: reading scrollWidth right after changing font-size
@@ -846,20 +865,40 @@
     var prevTransition = titleEl.style.transition;
     titleEl.style.transition = 'none';
     titleEl.style.fontSize = '';
-    requestAnimationFrame(function () {
+    fitTitleRafId = requestAnimationFrame(function () {
+      fitTitleRafId = null;
+      if (state.timerRunning) {
+        titleFitPending = true;
+        titleEl.style.transition = prevTransition;
+        return;
+      }
       var maxWidth = container.clientWidth;
-      var tries = 0;
-      while (titleEl.scrollWidth > maxWidth && tries < 60) {
+      var naturalWidth = titleEl.scrollWidth;
+      // v89 repeatedly alternated scrollWidth/getComputedStyle reads with
+      // font-size writes up to 60 times. Each pass forces synchronous layout
+      // in WebKit and the whole loop was visible as the recorded 0.32s timer
+      // freeze. One proportional calculation reaches the same fitted size
+      // with a single layout read and a single style write.
+      if (naturalWidth > maxWidth) {
         var current = parseFloat(getComputedStyle(titleEl).fontSize);
-        if (!current || current <= 14) break;
-        titleEl.style.fontSize = (current - 1) + 'px';
-        tries++;
+        if (current && current > 14) {
+          titleEl.style.fontSize = Math.max(14, current * maxWidth / naturalWidth - 0.5) + 'px';
+        }
       }
       // Force layout to flush the final size before re-enabling the
       // transition, so it doesn't animate from a stale intermediate value.
       void titleEl.offsetWidth;
       titleEl.style.transition = prevTransition;
     });
+  }
+
+  function flushDeferredViewportWork() {
+    if (state.timerRunning) return;
+    if (titleFitPending) fitTitle();
+    if (scrollResetPending) {
+      scrollResetPending = false;
+      resetScroll();
+    }
   }
   window.addEventListener('resize', fitTitle);
   // Re-run once the webfont actually swaps in — the font loads async
@@ -930,6 +969,7 @@
     if (state.failTimeoutId) clearTimeout(state.failTimeoutId);
     state.rafId = null;
     state.failTimeoutId = null;
+    state.timerRunning = false;
     if (!keepRingVisible) clearTimerRing();
   }
 
@@ -1102,6 +1142,7 @@
     drawTimerRing(1, '#35E892', 1);
     state.startTime = performance.now() + RING_START_DELAY;
     state.ringFadeStartTime = performance.now() - RING_FADE_IN_MS;
+    state.timerRunning = true;
     state.rafId = requestAnimationFrame(loop);
     state.failTimeoutId = setTimeout(handleFail, RING_START_DELAY + state.duration);
   }
@@ -1149,6 +1190,9 @@
     }
     clearTimer(ringIsAlreadyFull);
     render();
+    // Any iOS viewport/font work deferred during the previous countdown is
+    // safe here: the new command is being spoken and its timer has not begun.
+    flushDeferredViewportWork();
     // Between successful actions the full ring has already been painted
     // while hidden by the expanded button, so leave it untouched. The
     // initial round still performs the normal short ring fade-in.
@@ -1611,6 +1655,10 @@
   // through, snap the page back to (0,0) immediately so nothing can
   // drift and expose space beyond the oversized background fill.
   function resetScroll() {
+    if (state.timerRunning) {
+      scrollResetPending = true;
+      return;
+    }
     // Preserve the iOS white-bar safety net without forcing a no-op scroll
     // and synchronous viewport update on every Safari resize event.
     if (window.scrollX !== 0 || window.scrollY !== 0) window.scrollTo(0, 0);
