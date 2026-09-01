@@ -19,6 +19,13 @@
     background: #8FD3F4;
     font-family: 'Baloo 2', sans-serif;
     color: #3B230F;
+    /* Matches the thickness of the black outline drawn around the
+       "DORK IT" title (that outline is built from text-shadow rings out
+       to 0.065em of the title's clamp(44px, 15vw, 92px) font-size —
+       i.e. 0.065 * 44px to 0.065 * 92px, scaling with 0.065 * 15vw in
+       between). Used as the border-width for every black-bordered box
+       and button so they all read as the same stroke weight. */
+    --dork-border-w: clamp(3px, 1vw, 6px);
   }
   /* Oversized fixed background element — deliberately bigger than the
      viewport in every direction and pinned with position:fixed so that
@@ -170,7 +177,7 @@
       0.0000em 0.0850em 0 #000;;
     display: flex; align-items: center; gap: 10px;
     white-space: nowrap; max-width: 100%;
-    transition: font-size 220ms ease;
+    transition: font-size 380ms cubic-bezier(.4,0,.2,1);
   }
   .dork-wiggle {
     display: inline-block;
@@ -182,9 +189,9 @@
   .dork-subbar { display: flex; align-items: center; justify-content: center; gap: 28px; margin-top: 18px; }
   .dork-readout {
     font-family: 'Fredoka', sans-serif; font-weight: 700;
-    background: #FFF8ED; border: 3px solid #3B230F; box-shadow: 3px 3px 0 rgba(59,35,15,0.3);
+    background: #FFF8ED; border: var(--dork-border-w) solid #3B230F; box-shadow: 3px 3px 0 rgba(59,35,15,0.3);
     padding: 6px 12px; border-radius: 16px; font-size: clamp(14px, 3.2vw, 18px);
-    transition: padding 220ms ease, font-size 220ms ease, box-shadow 220ms ease;
+    transition: padding 380ms cubic-bezier(.4,0,.2,1), font-size 380ms cubic-bezier(.4,0,.2,1), box-shadow 380ms cubic-bezier(.4,0,.2,1);
   }
   .dork-readout b { color: #FF5FA2; }
   .dork-readout.big {
@@ -202,34 +209,31 @@
 
   .dork-relative {
     position: relative;
-    min-height: clamp(280px, 86vmin, 700px);
+    min-height: clamp(308px, 94.6vmin, 770px);
     display: flex; align-items: center; justify-content: center;
   }
   .dork-pod {
-    position: absolute;
-    left: 50%;
-    top: 50%;
+    position: relative;
     width: 100%;
     max-width: clamp(260px, 90vmin, 700px);
     display: flex; flex-direction: column; align-items: center;
-    transform: translate(-50%, -50%);
   }
   .dork-pod.wobble { animation: wobbleFail 0.5s ease; }
 
   .dork-confirm-wrap {
     position: relative;
+    top: -8px;
     width: clamp(240px, 82vmin, 640px);
     height: clamp(240px, 82vmin, 640px);
     display: flex; align-items: center; justify-content: center;
     transform-origin: center;
   }
-  .dork-confirm-wrap.pulsing { animation: slowPulse 3.4s ease-in-out infinite; }
   .dork-ring {
     position: absolute; inset: 0; width: 100%; height: 100%;
     pointer-events: none; z-index: 1;
     transition: transform 90ms ease;
   }
-  .dork-ring.pressed { transform: translate(5px, 5px); }
+  .dork-ring.pressed { transform: none; }
   .dork-ring-fg {
     fill: none; stroke: #4ADE9C; stroke-width: 6; stroke-linecap: round;
     transition: stroke-dashoffset 60ms linear, stroke 200ms ease;
@@ -243,7 +247,7 @@
     border-radius: 9999px;
     background: #FFF8ED;
     border-style: solid;
-    border-width: clamp(6px, 1.6vmin, 16px);
+    border-width: var(--dork-border-w);
     border-color: #3B230F;
     color: #3B230F;
     font-family: 'Fredoka', sans-serif; font-weight: 700;
@@ -259,8 +263,17 @@
     user-select: none;
   }
   .dork-confirm.playing { cursor: pointer; }
+  /* Freeze the real button while an overlay morphs into it. The idle
+     bounce otherwise changes its transform while we measure/animate to it,
+     which can leave the morph ending at a different position and then
+     visibly snap when the real button is revealed. */
+  .dork-confirm.morphing-target {
+    animation: none !important;
+    transform: none !important;
+    transition: none !important;
+  }
   .dork-confirm.idle-bounce { animation: bounceIdle 1.8s ease-in-out infinite; }
-  .dork-confirm.pressed { transform: translate(5px, 5px); }
+  .dork-confirm.pressed { transform: none; }
   .dork-confirm.success { animation: popIn 0.3s ease; }
   .dork-confirm.long-label { font-size: clamp(20px, 5.4vmin, 40px); overflow-wrap: anywhere; word-break: normal; }
   .dork-confirm.combo {
@@ -268,33 +281,26 @@
     animation: comboGlow 1s ease-in-out infinite alternate;
   }
 
-  .confetti-piece { position: absolute; left: 50%; top: 50%; font-size: clamp(48px, 9vmin, 84px); pointer-events: none; }
+  .confetti-piece { position: absolute; left: 50%; top: 50%; z-index: 30; font-size: clamp(48px, 9vmin, 84px); pointer-events: none; will-change: transform, opacity; }
 
   .dork-overlay {
     position: absolute; inset: 0; display: flex; flex-direction: column;
     align-items: center; justify-content: center; text-align: center;
-    padding: 0 8%; border-radius: 24px; background: rgba(255,248,237,0.97);
+    padding: 0 8%; border-radius: 24px; background: #FFF8ED;
+    border-style: solid; border-width: var(--dork-border-w); border-color: #3B230F;
     z-index: 20;
   }
-  .dork-overlay {
-    transition: opacity 300ms ease;
-  }
-  .dork-overlay.fade-out {
-    opacity: 0;
-    pointer-events: none;
-  }
-
   .dork-overlay-title {
     font-family: 'Fredoka', sans-serif; font-weight: 700; font-size: clamp(32px, 7vw, 44px); color: #FF5FA2;
     margin-bottom: 10px; display: flex; align-items: center; gap: 8px;
   }
   .dork-overlay p {
     color: #7A5A38; font-family: 'Baloo 2', sans-serif; font-weight: 600;
-    font-size: clamp(25.6px, 6.08vw, 33.6px); max-width: 420px; margin: 0 0 20px; line-height: 1.5;
+    font-size: clamp(21.12px, 5.016vw, 27.72px); max-width: 420px; margin: 0 0 20px; line-height: 1.5;
   }
   .dork-btn {
     font-family: 'Fredoka', sans-serif; font-weight: 700; background: #4ADE9C; color: #1F3B2C;
-    border: 4px solid #3B230F; box-shadow: 5px 5px 0 rgba(59,35,15,0.35);
+    border: var(--dork-border-w) solid #3B230F; box-shadow: 5px 5px 0 rgba(59,35,15,0.35);
     padding: 14px 34px; border-radius: 999px; font-size: clamp(16px, 3.8vw, 21px); cursor: pointer; margin-bottom: 16px;
   }
   .dork-highscore { font-family: 'Fredoka', sans-serif; font-weight: 700; color: #7A5A38; font-size: clamp(14px, 3.2vw, 18px); margin-top: 8px; }
@@ -313,21 +319,17 @@
     0%, 100% { transform: translateY(0) scale(1); }
     50% { transform: translateY(-6px) scale(1.02); }
   }
-  @keyframes slowPulse {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.025); }
-  }
   @keyframes popIn {
     0% { transform: scale(0.7); }
     60% { transform: scale(1.12); }
     100% { transform: scale(1); }
   }
   @keyframes wobbleFail {
-    0%, 100% { transform: translate(-50%, -50%) rotate(0deg) translateX(0); }
-    20% { transform: translate(-50%, -50%) rotate(-8deg) translateX(-6px); }
-    40% { transform: translate(-50%, -50%) rotate(7deg) translateX(6px); }
-    60% { transform: translate(-50%, -50%) rotate(-5deg) translateX(-4px); }
-    80% { transform: translate(-50%, -50%) rotate(4deg) translateX(4px); }
+    0%, 100% { transform: rotate(0deg) translateX(0); }
+    20% { transform: rotate(-8deg) translateX(-6px); }
+    40% { transform: rotate(7deg) translateX(6px); }
+    60% { transform: rotate(-5deg) translateX(-4px); }
+    80% { transform: rotate(4deg) translateX(4px); }
   }
   @keyframes confettiPop {
     0% { transform: translate(0,0) rotate(0deg) scale(1); opacity: 1; }
@@ -439,6 +441,12 @@
   };
   var REGULAR_ACTIONS = Object.keys(META).filter(function (k) { return k !== 'COMBO'; });
   var RING_CIRCUMFERENCE = 2 * Math.PI * 47; // ~295.31
+  var RING_STROKE_WIDTH = 6; // matches .dork-ring-fg's stroke-width, same viewBox units
+  // Once the remaining arc is shorter than the ring's own stroke width,
+  // a round stroke-linecap stops shrinking and just sits there as a
+  // solid dot. Below this fraction of time remaining we fade the ring's
+  // opacity out instead, so it visually shrinks all the way to nothing.
+  var RING_DOT_THRESHOLD = RING_STROKE_WIDTH / RING_CIRCUMFERENCE;
 
   var el = {
     scoreReadout: document.getElementById('scoreReadout'),
@@ -741,18 +749,28 @@
     document.fonts.ready.then(fitTitle).catch(function () {});
   }
 
-  function render() {
-    el.scoreReadout.textContent = String(state.score).padStart(2, '0');
-
-    var playing = state.gameState === 'playing';
-    el.confirmBtn.classList.toggle('playing', playing);
-    el.confirmWrap.classList.toggle('pulsing', playing);
-    el.confirmBtn.classList.toggle('idle-bounce', !playing);
-    el.confirmBtn.classList.toggle('combo', playing && state.currentAction === 'COMBO');
+  // The parts of "playing vs. not playing" that change the page's overall
+  // layout height (score box padding/font-size, title sizing) — split out
+  // from render() so a morph can trigger this at the exact moment its own
+  // transform animation starts, instead of it landing as a separate step
+  // right before or right after. Both this and the box-morph transform
+  // now run over the same MORPH_MS duration, so everything settles at
+  // the same time with nothing left to shift afterward.
+  function setPlayingLayout(playing) {
     el.scoreBox.classList.toggle('big', playing);
     el.highScoreBox.classList.toggle('big', playing);
     el.dorkTitle.classList.toggle('playing', playing);
     fitTitle();
+  }
+
+  function render(skipPlayingLayout) {
+    el.scoreReadout.textContent = String(state.score).padStart(2, '0');
+
+    var playing = state.gameState === 'playing';
+    el.confirmBtn.classList.toggle('playing', playing);
+    el.confirmBtn.classList.toggle('idle-bounce', !playing);
+    el.confirmBtn.classList.toggle('combo', playing && state.currentAction === 'COMBO');
+    if (!skipPlayingLayout) setPlayingLayout(playing);
 
     if (playing && state.currentAction) {
       if (Array.isArray(state.currentAction)) {
@@ -770,7 +788,17 @@
       el.confirmBtn.textContent = 'READY?';
       el.confirmBtn.style.borderColor = '#3B230F';
       el.confirmBtn.classList.remove('long-label');
-      el.timerRing.style.strokeDashoffset = 0;
+      // Resting ring look for idle/game-over: fully empty (drained), not
+      // full. Snapping it back to "full" here was what caused a red ring
+      // to flash in right as the game ended (the round's last color was
+      // red, and this reset the offset to "full" before the game-over
+      // box had grown large enough to cover it). The morph-in transition
+      // explicitly resets the ring to full green itself, so it's still
+      // shown correctly once the next round actually starts.
+      el.timerRing.style.strokeDashoffset = RING_CIRCUMFERENCE;
+      // NOTE: opacity is intentionally left alone here — it gets reset
+      // once the button-into-box morph has actually finished, not the
+      // instant we enter this state (see morphButtonIntoOverlay).
     }
 
     el.idleOverlay.style.display = state.gameState === 'idle' ? 'flex' : 'none';
@@ -793,12 +821,14 @@
     if (elapsed < 0) {
       el.timerRing.style.strokeDashoffset = 0;
       el.timerRing.style.stroke = '#4ADE9C';
+      el.timerRing.style.opacity = '1';
       state.rafId = requestAnimationFrame(loop);
       return;
     }
     var p = Math.max(0, 1 - elapsed / state.duration);
     el.timerRing.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - p));
     el.timerRing.style.stroke = p > 0.5 ? '#4ADE9C' : (p > 0.22 ? '#FFD93D' : '#FF5C5C');
+    el.timerRing.style.opacity = p < RING_DOT_THRESHOLD ? String(p / RING_DOT_THRESHOLD) : '1';
     if (p <= 0) { handleFail(); return; }
     state.rafId = requestAnimationFrame(loop);
   }
@@ -845,14 +875,13 @@
     }
     el.finalScore.textContent = state.score;
     el.gameoverSub.textContent = isNewHigh ? 'NEW HIGH SCORE!' : ('HIGH SCORE: ' + state.highScore);
-
-    // Keep the game-over text box hidden until the fail-button animation is done.
-    el.gameoverOverlay.style.opacity = '0';
-    render();
-    el.gameoverOverlay.style.opacity = '0';
-    setTimeout(function () {
-      el.gameoverOverlay.style.opacity = '1';
-    }, 500);
+    // Freeze the button before render switches it into the non-playing idle
+    // state. The reverse morph keeps it frozen through the entire handoff.
+    el.confirmBtn.classList.add('morphing-target');
+    // The reverse morph applies the non-playing layout immediately before
+    // measuring the final overlay geometry.
+    render(true);
+    morphButtonIntoOverlay(el.gameoverOverlay);
   }
 
   function handleConfirm() {
@@ -877,19 +906,6 @@
   }
 
   function startGame() {
-    el.gameoverOverlay.style.opacity = '1';
-    if (state.gameState === 'idle') {
-      el.idleOverlay.classList.add('fade-out');
-      setTimeout(function () {
-        state.score = 0;
-        state.speedMultiplier = 1;
-        state.gameState = 'playing';
-        render();
-        nextRound(0);
-      }, 300);
-      return;
-    }
-
     state.score = 0;
     state.speedMultiplier = 1;
     state.gameState = 'playing';
@@ -897,9 +913,232 @@
     nextRound(0);
   }
 
+  // ---------- overlay -> button morph transition ----------
+  var FADE_MS = 150;
+  var MORPH_MS = 380;
+  // The morph target is the real button itself. It is frozen for the
+  // entire morph, so its measured rect cannot move underneath the overlay.
+  // There is deliberately NO landing nudge or end correction: the overlay
+  // is transformed directly to the button's exact border box, then cross-faded
+  // into the real button at the end. Both occupy the same geometry, so there
+  // is no positional snap during the handoff.
+
+  // `transform: scale()` also scales the border. Because the box-to-circle
+  // morph can use different X/Y scale factors, the four sides need separate
+  // compensation; the helper below continuously applies the inverse X/Y
+  // scale so the visible outline remains uniform and matches the real button.
+  function keepBorderVisuallyConstant(targetEl, durationMs) {
+    // A non-uniform scale stretches horizontal and vertical borders by
+    // different amounts. Compensate each axis separately so the morph's
+    // black outline stays the same apparent thickness as the real button,
+    // including at the final circular frame. Using one averaged scale here
+    // was why the top/bottom and sides could look different.
+    var trueBorderPx = parseFloat(getComputedStyle(targetEl).borderTopWidth) || 0;
+    var start = performance.now();
+    function frame() {
+      var elapsed = performance.now() - start;
+      var m = new DOMMatrix(getComputedStyle(targetEl).transform);
+      var scaleX = Math.hypot(m.a, m.b) || 1;
+      var scaleY = Math.hypot(m.c, m.d) || 1;
+      targetEl.style.borderTopWidth = (trueBorderPx / scaleY) + 'px';
+      targetEl.style.borderBottomWidth = (trueBorderPx / scaleY) + 'px';
+      targetEl.style.borderLeftWidth = (trueBorderPx / scaleX) + 'px';
+      targetEl.style.borderRightWidth = (trueBorderPx / scaleX) + 'px';
+      if (elapsed < durationMs + 20) {
+        requestAnimationFrame(frame);
+      } else {
+        targetEl.style.borderTopWidth = trueBorderPx + 'px';
+        targetEl.style.borderBottomWidth = trueBorderPx + 'px';
+        targetEl.style.borderLeftWidth = trueBorderPx + 'px';
+        targetEl.style.borderRightWidth = trueBorderPx + 'px';
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function morphOverlayIntoButton(overlayEl, onDone) {
+    var children = Array.prototype.slice.call(overlayEl.children);
+    overlayEl.style.pointerEvents = 'none';
+
+    // Reset the timer ring to its "full and green" resting look right
+    // away, so as the box shrinks down and reveals the ring underneath,
+    // we see green (not a leftover red from a previous fail).
+    el.timerRing.style.strokeDashoffset = 0;
+    el.timerRing.style.stroke = '#4ADE9C';
+    el.timerRing.style.opacity = '1';
+
+    // 1) Quickly fade out all the overlay's content.
+    children.forEach(function (c) {
+      c.style.transition = 'opacity ' + FADE_MS + 'ms ease';
+      c.style.opacity = '0';
+    });
+
+    setTimeout(function () {
+      // Freeze the real button before measuring it. In idle state it may be
+      // running the bounce animation, which otherwise makes the target move
+      // during the morph and causes the exact mismatch seen at the bottom.
+      el.confirmBtn.classList.add('morphing-target');
+
+      // Put the playing layout in its final geometry BEFORE measuring either
+      // endpoint. This prevents score/title resizing from moving the target
+      // after the transform has already started.
+      setPlayingLayout(true);
+
+      // 2) Morph the (now-empty) box from its current rect into the
+      // confirm button's circle, using its actual on-screen position so
+      // this works regardless of viewport size. Animating `transform`
+      // (translate + scale) instead of left/top/width/height keeps this
+      // on the compositor — animating layout properties like width/height
+      // forces the browser to recompute layout every frame, which is
+      // what was causing the stutter.
+      var startRect = overlayEl.getBoundingClientRect();
+      var targetRect = el.confirmBtn.getBoundingClientRect();
+
+      var dx = (targetRect.left + targetRect.width / 2) - (startRect.left + startRect.width / 2);
+      var dy = (targetRect.top + targetRect.height / 2) - (startRect.top + startRect.height / 2);
+      var sx = targetRect.width / startRect.width;
+      var sy = targetRect.height / startRect.height;
+
+      overlayEl.style.willChange = 'transform, border-radius';
+      overlayEl.style.transition = 'none';
+      overlayEl.style.transform = 'translate(0px, 0px) scale(1, 1)';
+      void overlayEl.offsetWidth; // flush before animating
+
+      // Wait a frame so the identity transform above actually paints
+      // before the transitioned values are applied, otherwise the
+      // browser can coalesce both style writes into one frame and skip
+      // straight to the end state.
+      requestAnimationFrame(function () {
+        overlayEl.style.transition =
+          'transform ' + MORPH_MS + 'ms cubic-bezier(.4,0,.2,1), ' +
+          'border-radius ' + MORPH_MS + 'ms cubic-bezier(.4,0,.2,1)';
+        overlayEl.style.transform = 'translate(' + dx + 'px, ' + dy + 'px) scale(' + sx + ', ' + sy + ')';
+        overlayEl.style.borderRadius = '50%';
+        keepBorderVisuallyConstant(overlayEl, MORPH_MS);
+      });
+
+      setTimeout(function () {
+        // 3) Cross-fade the morph into the real button for the final 90ms.
+        // Both elements are already in the exact same measured geometry, so
+        // there is no positional handoff/snap. The cross-fade simply hides
+        // any sub-pixel rasterization difference between the transformed
+        // overlay and the native button border. Keep the button frozen until
+        // the fade is complete so its geometry cannot move underneath us.
+        var CROSSFADE_MS = 90;
+        el.confirmBtn.style.opacity = '0';
+        el.confirmBtn.style.transition = 'opacity ' + CROSSFADE_MS + 'ms ease';
+        overlayEl.style.transition =
+          'transform ' + MORPH_MS + 'ms cubic-bezier(.4,0,.2,1), ' +
+          'border-radius ' + MORPH_MS + 'ms cubic-bezier(.4,0,.2,1), ' +
+          'opacity ' + CROSSFADE_MS + 'ms ease';
+        requestAnimationFrame(function () {
+          overlayEl.style.opacity = '0';
+          el.confirmBtn.style.opacity = '1';
+        });
+
+        setTimeout(function () {
+          overlayEl.style.display = 'none';
+          overlayEl.style.cssText = '';
+          children.forEach(function (c) { c.style.cssText = ''; });
+          el.confirmBtn.style.opacity = '';
+          el.confirmBtn.style.transition = '';
+          el.confirmBtn.classList.remove('morphing-target');
+          onDone();
+        }, CROSSFADE_MS + 20);
+      }, MORPH_MS + 40);
+    }, FADE_MS + 20);
+  }
+
+  // Reverse of morphOverlayIntoButton: the small confirm button morphs
+  // outward into the full overlay box. This is the exact same choreography
+  // as the forward morph, played backwards.
+  function morphButtonIntoOverlay(overlayEl) {
+    var children = Array.prototype.slice.call(overlayEl.children);
+    var CROSSFADE_MS = 90;
+
+    overlayEl.style.pointerEvents = 'none';
+    overlayEl.style.display = 'flex';
+    children.forEach(function (c) {
+      c.style.transition = 'none';
+      c.style.opacity = '0';
+    });
+
+    // Freeze the real button before measuring it. The button stays fully
+    // visible underneath the morph for the ENTIRE geometry animation.
+    // This is the exact reverse of the forward morph: morph first, then
+    // cross-fade only after the two shapes have reached identical geometry.
+    el.confirmBtn.classList.add('morphing-target');
+    setPlayingLayout(false);
+
+    var targetRect = overlayEl.getBoundingClientRect();
+    var startRect = el.confirmBtn.getBoundingClientRect();
+
+    var dx = (startRect.left + startRect.width / 2) - (targetRect.left + targetRect.width / 2);
+    var dy = (startRect.top + startRect.height / 2) - (targetRect.top + targetRect.height / 2);
+    var sx = startRect.width / targetRect.width;
+    var sy = startRect.height / targetRect.height;
+
+    // Start as an exact circle over the real button. It is invisible at this
+    // point, so the real button remains the only visible element.
+    overlayEl.style.willChange = 'transform, border-radius, opacity';
+    overlayEl.style.transition = 'none';
+    overlayEl.style.transform = 'translate(' + dx + 'px, ' + dy + 'px) scale(' + sx + ', ' + sy + ')';
+    overlayEl.style.borderRadius = '50%';
+    overlayEl.style.opacity = '0';
+    void overlayEl.offsetWidth;
+
+    // First do the full circle -> box geometry morph. The real button stays
+    // visible and completely frozen underneath it, eliminating any early
+    // cross-fade or dark flash.
+    requestAnimationFrame(function () {
+      overlayEl.style.transition =
+        'transform ' + MORPH_MS + 'ms cubic-bezier(.4,0,.2,1), ' +
+        'border-radius ' + MORPH_MS + 'ms cubic-bezier(.4,0,.2,1)';
+      overlayEl.style.transform = 'translate(0px, 0px) scale(1, 1)';
+      overlayEl.style.borderRadius = '24px';
+      keepBorderVisuallyConstant(overlayEl, MORPH_MS);
+    });
+
+    setTimeout(function () {
+      // Now the morph is a fully grown box. Only at this exact point do we
+      // cross-fade, matching the forward morph's end-of-morph handoff.
+      el.confirmBtn.style.opacity = '1';
+      el.confirmBtn.style.transition = 'opacity ' + CROSSFADE_MS + 'ms ease';
+      overlayEl.style.transition = 'opacity ' + CROSSFADE_MS + 'ms ease';
+      overlayEl.style.opacity = '0';
+      requestAnimationFrame(function () {
+        el.confirmBtn.style.opacity = '0';
+        overlayEl.style.opacity = '1';
+      });
+
+      setTimeout(function () {
+        el.timerRing.style.opacity = '1';
+        overlayEl.style.cssText = '';
+        overlayEl.style.display = 'flex';
+        children.forEach(function (c) {
+          c.style.transition = 'opacity ' + FADE_MS + 'ms ease';
+          c.style.opacity = '1';
+        });
+
+        setTimeout(function () {
+          children.forEach(function (c) { c.style.cssText = ''; });
+          el.confirmBtn.style.opacity = '';
+          el.confirmBtn.style.transition = '';
+          el.confirmBtn.classList.remove('morphing-target');
+        }, FADE_MS + 20);
+      }, CROSSFADE_MS + 20);
+    }, MORPH_MS + 40);
+  }
+
   // ---------- controls ----------
-  el.startBtn.addEventListener('click', startGame);
-  el.playAgainBtn.addEventListener('click', startGame);
+  el.startBtn.addEventListener('click', function (e) {
+    e.preventDefault();
+    morphOverlayIntoButton(el.idleOverlay, startGame);
+  });
+  el.playAgainBtn.addEventListener('click', function (e) {
+    e.preventDefault();
+    morphOverlayIntoButton(el.gameoverOverlay, startGame);
+  });
   // Tap/click ANYWHERE on the screen completes the action — not just the
   // circle — so it's easy to keep up during fast, frantic play.
   var lastTapTime = 0;
