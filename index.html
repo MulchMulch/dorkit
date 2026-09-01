@@ -237,7 +237,22 @@
   .dork-ring.pressed { transform: none; }
   .dork-ring-fg {
     fill: none; stroke: #4ADE9C; stroke-width: 6; stroke-linecap: round;
-    transition: stroke-dashoffset 45ms linear, stroke 120ms ease;
+    transition: none;
+  }
+
+  /* The reverse morph uses a viewport-fixed tracker plus a nested shell.
+     The tracker follows the box's live resting position while the page
+     re-centers; the shell independently grows from circle to box. */
+  .dork-morph-tracker {
+    position: fixed; left: 0; top: 0; z-index: 60;
+    pointer-events: none; will-change: transform, opacity;
+  }
+  .dork-morph-shell {
+    position: absolute; inset: 0; box-sizing: border-box;
+    border: var(--dork-border-w) solid #3B230F;
+    border-radius: 50%; background: #FFF8ED;
+    transform-origin: center center;
+    will-change: transform, border-radius;
   }
 
   .dork-confirm {
@@ -477,6 +492,8 @@
     attempted: false,
     rafId: null,
     failTimeoutId: null,
+    ringAnimation: null,
+    ringColorTimeoutIds: [],
     lastRingPaint: 0,
     ringColor: '',
     morphingOut: false,
@@ -820,8 +837,12 @@
   function clearTimer() {
     if (state.rafId) cancelAnimationFrame(state.rafId);
     if (state.failTimeoutId) clearTimeout(state.failTimeoutId);
+    if (state.ringAnimation) state.ringAnimation.cancel();
+    state.ringColorTimeoutIds.forEach(function (id) { clearTimeout(id); });
     state.rafId = null;
     state.failTimeoutId = null;
+    state.ringAnimation = null;
+    state.ringColorTimeoutIds = [];
   }
 
   var RING_START_DELAY = 200; // ms — hold the ring full before it starts draining
@@ -858,6 +879,45 @@
     state.rafId = requestAnimationFrame(loop);
   }
 
+  function startRingTimer() {
+    el.timerRing.style.strokeDashoffset = '0';
+    el.timerRing.style.stroke = '#4ADE9C';
+    el.timerRing.style.opacity = '1';
+    state.ringColor = '#4ADE9C';
+
+    // Use one native animation instead of changing a large SVG circle from
+    // JavaScript every frame. On iPhone the previous overlapping dash and
+    // color transitions became expensive as the arc entered its final
+    // quarter. The browser can schedule this animation independently of
+    // gameplay JavaScript, while the exact fail deadline remains a timeout.
+    if (typeof el.timerRing.animate === 'function') {
+      var fadeStart = 1 - RING_DOT_THRESHOLD;
+      state.ringAnimation = el.timerRing.animate([
+        { strokeDashoffset: '0', opacity: '1', offset: 0 },
+        { strokeDashoffset: String(RING_CIRCUMFERENCE * fadeStart), opacity: '1', offset: fadeStart },
+        { strokeDashoffset: String(RING_CIRCUMFERENCE), opacity: '0', offset: 1 }
+      ], {
+        duration: state.duration,
+        delay: RING_START_DELAY,
+        easing: 'linear',
+        fill: 'forwards'
+      });
+    } else {
+      // Older-browser fallback; modern iOS Safari uses the native path above.
+      state.rafId = requestAnimationFrame(loop);
+    }
+
+    state.ringColorTimeoutIds = [
+      setTimeout(function () {
+        if (state.gameState === 'playing') el.timerRing.style.stroke = '#FFD93D';
+      }, RING_START_DELAY + state.duration * 0.5),
+      setTimeout(function () {
+        if (state.gameState === 'playing') el.timerRing.style.stroke = '#FF5C5C';
+      }, RING_START_DELAY + state.duration * 0.78)
+    ];
+    state.failTimeoutId = setTimeout(handleFail, RING_START_DELAY + state.duration);
+  }
+
   function nextRound(nextScore) {
     state.attempted = false;
     var action = pickAction(
@@ -883,8 +943,7 @@
 
     clearTimer();
     render();
-    state.rafId = requestAnimationFrame(loop);
-    state.failTimeoutId = setTimeout(handleFail, RING_START_DELAY + state.duration);
+    startRingTimer();
   }
 
   function handleFail() {
@@ -1103,118 +1162,113 @@
     }, FADE_MS + 20);
   }
 
-  // Reverse transition: cross-fade the stationary real button into an
-  // identical empty circle, then grow that same element into the box.
-  // The morphing element is temporarily fixed to the viewport, so the
-  // score/title layout change cannot pull it away from its start point.
+  // Reverse transition. A fixed outer tracker follows the overlay's live
+  // resting position while the page re-centers, and a nested shell handles
+  // the circle-to-box scale. This folds the vertical movement into the
+  // morph instead of correcting it with a snap afterward.
   function morphButtonIntoOverlay(overlayEl) {
     var children = Array.prototype.slice.call(overlayEl.children);
     var startRect = el.confirmBtn.getBoundingClientRect();
-
-    el.confirmBtn.classList.remove('idle-bounce', 'pressed', 'success');
-    el.confirmWrap.classList.remove('pulsing');
-    el.confirmBtn.style.animation = 'none';
-
-    // Establish the game-over layout while the real button is still in
-    // its old spot. The fixed morph circle will cover this layout handoff.
-    setPlayingLayout(false);
-    overlayEl.style.cssText = '';
-    overlayEl.style.display = 'flex';
-    overlayEl.style.pointerEvents = 'none';
-    overlayEl.style.opacity = '0';
-    overlayEl.style.transition = 'none';
-    overlayEl.style.transform = 'none';
-    children.forEach(function (c) {
-      c.style.transition = 'none';
-      c.style.opacity = '0';
-    });
-    void overlayEl.offsetWidth;
-    var targetRect = overlayEl.getBoundingClientRect();
+    var targetHost = overlayEl.parentElement;
+    var targetRect = targetHost.getBoundingClientRect();
+    var trueBorderPx = parseFloat(getComputedStyle(overlayEl).borderTopWidth) || 0;
     var dx = (startRect.left + startRect.width / 2) - (targetRect.left + targetRect.width / 2);
     var dy = (startRect.top + startRect.height / 2) - (targetRect.top + targetRect.height / 2);
     var sx = startRect.width / targetRect.width;
     var sy = startRect.height / targetRect.height;
-    var trueBorderPx = parseFloat(getComputedStyle(overlayEl).borderTopWidth) || 0;
 
-    // Pin the overlay's final box rect, then transform that box so its
-    // painted border box exactly matches the gameplay button.
-    overlayEl.style.position = 'fixed';
-    overlayEl.style.inset = 'auto';
-    overlayEl.style.left = targetRect.left + 'px';
-    overlayEl.style.top = targetRect.top + 'px';
-    overlayEl.style.width = targetRect.width + 'px';
-    overlayEl.style.height = targetRect.height + 'px';
-    overlayEl.style.zIndex = '60';
-    overlayEl.style.willChange = 'transform, border-radius';
-    overlayEl.style.transform = 'translate(' + dx + 'px, ' + dy + 'px) scale(' + sx + ', ' + sy + ')';
-    overlayEl.style.borderRadius = '50%';
-    overlayEl.style.borderLeftWidth = (trueBorderPx / sx) + 'px';
-    overlayEl.style.borderRightWidth = (trueBorderPx / sx) + 'px';
-    overlayEl.style.borderTopWidth = (trueBorderPx / sy) + 'px';
-    overlayEl.style.borderBottomWidth = (trueBorderPx / sy) + 'px';
+    var tracker = document.createElement('div');
+    var shell = document.createElement('div');
+    tracker.className = 'dork-morph-tracker';
+    shell.className = 'dork-morph-shell';
+    tracker.style.width = targetRect.width + 'px';
+    tracker.style.height = targetRect.height + 'px';
+    tracker.style.transform = 'translate3d(' + targetRect.left + 'px, ' + targetRect.top + 'px, 0)';
+    shell.style.transform = 'translate(' + dx + 'px, ' + dy + 'px) scale(' + sx + ', ' + sy + ')';
+    shell.style.borderLeftWidth = (trueBorderPx / sx) + 'px';
+    shell.style.borderRightWidth = (trueBorderPx / sx) + 'px';
+    shell.style.borderTopWidth = (trueBorderPx / sy) + 'px';
+    shell.style.borderBottomWidth = (trueBorderPx / sy) + 'px';
+    tracker.appendChild(shell);
+    document.body.appendChild(tracker);
 
+    el.confirmBtn.classList.remove('idle-bounce', 'pressed', 'success');
+    el.confirmWrap.classList.remove('pulsing');
+    el.confirmBtn.style.animation = 'none';
     el.confirmBtn.style.transition = 'none';
     el.ringSvg.style.transition = 'none';
-    el.confirmBtn.style.opacity = '1';
-    el.ringSvg.style.opacity = '1';
-    void overlayEl.offsetWidth;
-
-    // Cross-fade only while both circles have identical geometry. This
-    // prevents the dark flash and makes the reverse morph unmistakable.
-    requestAnimationFrame(function () {
-      overlayEl.style.transition = 'opacity ' + CROSSFADE_MS + 'ms ease';
-      el.confirmBtn.style.transition = 'opacity ' + CROSSFADE_MS + 'ms ease';
-      el.ringSvg.style.transition = 'opacity ' + CROSSFADE_MS + 'ms ease';
-      overlayEl.style.opacity = '1';
-      el.confirmBtn.style.opacity = '0';
-      el.ringSvg.style.opacity = '0';
+    children.forEach(function (c) {
+      c.style.transition = 'none';
+      c.style.opacity = '0';
     });
+    void shell.offsetWidth;
 
-    setTimeout(function () {
-      overlayEl.style.transition =
+    // The shell now exactly covers the button, so the real gameplay
+    // elements can disappear without a visual positional handoff.
+    el.confirmBtn.style.opacity = '0';
+    el.ringSvg.style.opacity = '0';
+
+    var tracking = true;
+    var trackingRaf = null;
+    function followRestingBox() {
+      var liveRect = targetHost.getBoundingClientRect();
+      tracker.style.transform = 'translate3d(' + liveRect.left + 'px, ' + liveRect.top + 'px, 0)';
+      if (tracking) trackingRaf = requestAnimationFrame(followRestingBox);
+    }
+    trackingRaf = requestAnimationFrame(followRestingBox);
+
+    requestAnimationFrame(function () {
+      // The score boxes/title resize over the same 380ms. followRestingBox
+      // turns that re-centering into a smooth slide of the expanding shell.
+      setPlayingLayout(false);
+      shell.style.transition =
         'transform ' + MORPH_MS + 'ms cubic-bezier(.4,0,.2,1), ' +
         'border-radius ' + MORPH_MS + 'ms cubic-bezier(.4,0,.2,1)';
-      overlayEl.style.transform = 'translate(0px, 0px) scale(1, 1)';
-      overlayEl.style.borderRadius = '24px';
-      keepBorderVisuallyConstant(overlayEl, MORPH_MS, trueBorderPx);
+      shell.style.transform = 'translate(0px, 0px) scale(1, 1)';
+      shell.style.borderRadius = '24px';
+      keepBorderVisuallyConstant(shell, MORPH_MS, trueBorderPx);
 
       setTimeout(function () {
-        // The fixed and normal overlay rects are the same, so this is a
-        // style cleanup rather than a positional correction or snap.
+        // Only now—after the full morph—cross-fade the shell into the real
+        // box. Both occupy the same live rect, so there is no dark flash.
+        overlayEl.style.cssText = '';
+        overlayEl.style.display = 'flex';
+        overlayEl.style.pointerEvents = 'none';
+        overlayEl.style.opacity = '0';
         overlayEl.style.transition = 'none';
-        overlayEl.style.transform = 'none';
-        overlayEl.style.position = '';
-        overlayEl.style.inset = '';
-        overlayEl.style.left = '';
-        overlayEl.style.top = '';
-        overlayEl.style.width = '';
-        overlayEl.style.height = '';
-        overlayEl.style.zIndex = '';
-        overlayEl.style.willChange = '';
-        overlayEl.style.borderWidth = '';
-        overlayEl.style.borderLeftWidth = '';
-        overlayEl.style.borderRightWidth = '';
-        overlayEl.style.borderTopWidth = '';
-        overlayEl.style.borderBottomWidth = '';
-        overlayEl.style.opacity = '1';
+        void overlayEl.offsetWidth;
 
-        state.morphingOut = false;
-        el.confirmBtn.style.cssText = '';
-        el.ringSvg.style.cssText = '';
-        el.timerRing.style.opacity = '1';
-        render();
-
-        children.forEach(function (c) {
-          c.style.transition = 'opacity ' + FADE_MS + 'ms ease';
-          c.style.opacity = '1';
+        requestAnimationFrame(function () {
+          tracker.style.transition = 'opacity ' + CROSSFADE_MS + 'ms ease';
+          overlayEl.style.transition = 'opacity ' + CROSSFADE_MS + 'ms ease';
+          tracker.style.opacity = '0';
+          overlayEl.style.opacity = '1';
         });
+
         setTimeout(function () {
-          overlayEl.style.pointerEvents = '';
-          overlayEl.style.transition = '';
-          children.forEach(function (c) { c.style.cssText = ''; });
-        }, FADE_MS + 20);
+          tracking = false;
+          if (trackingRaf) cancelAnimationFrame(trackingRaf);
+          tracker.remove();
+
+          state.morphingOut = false;
+          el.confirmBtn.style.cssText = '';
+          el.ringSvg.style.cssText = '';
+          el.timerRing.style.opacity = '1';
+          render();
+
+          children.forEach(function (c) {
+            c.style.transition = 'opacity ' + FADE_MS + 'ms ease';
+            c.style.opacity = '1';
+          });
+          setTimeout(function () {
+            overlayEl.style.pointerEvents = '';
+            overlayEl.style.transition = '';
+            overlayEl.style.opacity = '';
+            children.forEach(function (c) { c.style.cssText = ''; });
+          }, FADE_MS + 20);
+        }, CROSSFADE_MS + 20);
       }, MORPH_MS + 30);
-    }, CROSSFADE_MS + 20);
+    });
   }
 
   // ---------- controls ----------
