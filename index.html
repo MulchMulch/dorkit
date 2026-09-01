@@ -432,7 +432,7 @@
     </div>
 
     <div class="dork-overlay" id="idleOverlay">
-      <p>Happy birthday Marissa!<br><br>I couldn't get you a Bop It, so I got you the next best thing.<br><br>Good luck, and don't get dorked!</p>
+      <p>Hi Marissa, happy birthday!<br><br>I couldn't get you a Bop It, so I got you the next best thing, a Dork It.<br><br>Good luck, and don't get dorked!</p>
       <button class="dork-btn" id="startBtn">START!</button>
     </div>
 
@@ -1046,6 +1046,22 @@
 
   var ringResizeRafId = null;
   window.addEventListener('resize', function () {
+    // iOS Safari's URL bar auto-collapses roughly a second or two after
+    // the player taps to start a round — right in the middle of a typical
+    // round's countdown. That firing alone is harmless, but reacting to it
+    // isn't free: sizeTimerCanvas() reads clientWidth (forcing a
+    // synchronous layout flush) and, if the computed pixel size comes out
+    // even one pixel different due to rounding, reassigns the canvas's
+    // width/height — which unconditionally wipes and reallocates its
+    // entire backing store, even when reassigned to visually the same
+    // size. That reallocation, landing mid-draw-loop, is the kind of
+    // one-time hitch that would show up partway through the countdown
+    // and nowhere else — and only on iOS, since desktop Safari has no
+    // collapsing chrome to trigger it. Skip reacting entirely while a
+    // round is live; the ring just keeps drawing at its current size for
+    // the rest of this one round, and sizeTimerCanvas() runs fresh again
+    // (via nextRound/startRingTimer) the moment the next round begins.
+    if (state.gameState === 'playing') return;
     // Safari may emit a burst of resize events while its browser chrome
     // settles. Coalesce them into one canvas measurement per visual frame.
     if (ringResizeRafId) return;
