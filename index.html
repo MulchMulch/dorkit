@@ -366,7 +366,7 @@
     text-shadow: 0 4px 0 rgba(59,35,15,0.24);
     transform-origin: center center;
     will-change: transform, opacity;
-    animation: comboMilestonePop 1.2s cubic-bezier(.2,.8,.2,1) forwards;
+    animation: comboMilestonePop 0.9s cubic-bezier(.2,.8,.2,1) forwards;
   }
   .combo-milestone::before,
   .combo-milestone::after {
@@ -495,7 +495,7 @@
 
 <div id="bgFill"></div>
 
-<div class="version-indicator" aria-hidden="true">v95</div>
+<div class="version-indicator" aria-hidden="true">v96</div>
 
 <div id="logoTile" aria-hidden="true">
   <svg xmlns="http://www.w3.org/2000/svg">
@@ -642,9 +642,12 @@
   // ---------- audio ----------
   var audioCtx = null;
   var masterBus = null;
+  var IS_IOS_WEBKIT = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   // Keep the completed iOS speech object alive until its round ends. WebKit
   // can otherwise reclaim the native utterance mid-countdown in a costly GC.
   var activeUtterance = null;
+  var activeSpeechKeepAlive = null;
   // Overall SFX loudness boost + a gentle compressor so sounds still read
   // loud and punchy on quiet phone speakers without clipping.
   var SFX_GAIN = 2.28;
@@ -825,6 +828,7 @@
     if (state.muted) { finish(); return; }
     try {
       if (!window.speechSynthesis || typeof SpeechSynthesisUtterance === 'undefined') { finish(); return; }
+      activeSpeechKeepAlive = null;
       activeUtterance = null;
       window.speechSynthesis.cancel();
       var u = new SpeechSynthesisUtterance(text);
@@ -836,6 +840,24 @@
       u.onend = finish;
       u.onerror = finish;
       window.speechSynthesis.speak(u);
+      // On iPhone, WebKit's platform speech session tears down shortly after
+      // the spoken command ends. All three recordings show that teardown as
+      // the same ~0.32s rendering freeze about 1.74s into the following
+      // countdown. Queue a silent, slow utterance so the native session stays
+      // active until clearTimer() deliberately cancels it between rounds.
+      if (IS_IOS_WEBKIT) {
+        var keepAlive = new SpeechSynthesisUtterance(
+          'one two three four five six seven eight nine ten eleven twelve'
+        );
+        keepAlive.rate = 0.1;
+        keepAlive.pitch = 1;
+        keepAlive.volume = 0.001;
+        activeSpeechKeepAlive = keepAlive;
+        keepAlive.onend = keepAlive.onerror = function () {
+          if (activeSpeechKeepAlive === keepAlive) activeSpeechKeepAlive = null;
+        };
+        window.speechSynthesis.speak(keepAlive);
+      }
       // Some mobile WebKit versions occasionally omit the completion
       // event. This only releases the timer if speech has stalled well
       // beyond its expected reading time, so a round can never hang.
@@ -887,21 +909,24 @@
     var popup = document.createElement('div');
     popup.className = 'combo-milestone';
     popup.textContent = score + ' COMBO!';
-    var sparkleChars = ['✦', '✧', '★', '✦'];
+    var sparkleChars = ['✦', '✧', '★', '✶', '✹', '✦'];
     var sparkleColors = ['#FFF8ED', '#FFD93D', '#FF5FA2'];
-    for (var sparkleIndex = 0; sparkleIndex < 16; sparkleIndex++) {
+    for (var sparkleIndex = 0; sparkleIndex < 32; sparkleIndex++) {
       var sparkle = document.createElement('span');
-      var sparkleAngle = Math.PI * 2 * sparkleIndex / 16 + (Math.random() - 0.5) * 0.22;
-      var sparkleDistance = 52 + Math.random() * 52;
+      var sparkleWave = sparkleIndex < 16 ? 0 : 1;
+      var sparkleAngle = Math.PI * 2 * (sparkleIndex % 16) / 16 +
+        (sparkleWave * 0.1) + (Math.random() - 0.5) * 0.2;
+      var sparkleDistance = sparkleWave === 0 ?
+        (48 + Math.random() * 36) : (82 + Math.random() * 44);
       sparkle.className = 'combo-sparkle';
       sparkle.textContent = sparkleChars[sparkleIndex % sparkleChars.length];
       sparkle.style.color = sparkleColors[sparkleIndex % sparkleColors.length];
-      sparkle.style.fontSize = (0.38 + Math.random() * 0.42) + 'em';
+      sparkle.style.fontSize = (0.4 + Math.random() * 0.48) + 'em';
       sparkle.style.setProperty('--spark-x', (Math.cos(sparkleAngle) * sparkleDistance) + 'px');
       sparkle.style.setProperty('--spark-y', (Math.sin(sparkleAngle) * sparkleDistance) + 'px');
       sparkle.style.setProperty('--spark-spin', ((Math.random() - 0.5) * 300) + 'deg');
-      sparkle.style.setProperty('--spark-delay', Math.round(Math.random() * 90) + 'ms');
-      sparkle.style.setProperty('--spark-duration', Math.round(760 + Math.random() * 240) + 'ms');
+      sparkle.style.setProperty('--spark-delay', Math.round(sparkleWave * 90 + Math.random() * 55) + 'ms');
+      sparkle.style.setProperty('--spark-duration', Math.round(500 + sparkleWave * 70 + Math.random() * 130) + 'ms');
       popup.appendChild(sparkle);
     }
     activeComboMilestone = popup;
@@ -914,7 +939,7 @@
     setTimeout(function () {
       if (popup.isConnected) popup.remove();
       if (activeComboMilestone === popup) activeComboMilestone = null;
-    }, 1350);
+    }, 1050);
   }
 
   function pickWeightedAction(pool) {
@@ -1104,6 +1129,14 @@
     state.failTimeoutId = null;
     stopRingAnimation(!!keepRingVisible);
     state.timerRunning = false;
+    if (activeSpeechKeepAlive && window.speechSynthesis) {
+      activeSpeechKeepAlive.onend = null;
+      activeSpeechKeepAlive.onerror = null;
+      activeSpeechKeepAlive = null;
+      // This intentionally happens only after the timer stops, so iOS can
+      // tear down its native speech session during the between-round pulse.
+      try { window.speechSynthesis.cancel(); } catch (e) {}
+    }
     // Releasing speech here is safe: the countdown has stopped, so any iOS
     // native cleanup cannot interrupt the timer animation.
     activeUtterance = null;
