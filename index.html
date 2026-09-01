@@ -232,15 +232,19 @@
   .dork-subbar { position: relative; display: flex; align-items: center; justify-content: center; gap: 28px; margin-top: 18px; }
   .dork-readout {
     font-family: 'Fredoka', sans-serif; font-weight: 700;
-    background: #FFF8ED; border: var(--dork-score-border-w) solid #3B230F; box-shadow: 3px 3px 0 rgba(59,35,15,0.3);
-    padding: 6px 12px; border-radius: 16px; font-size: clamp(14px, 3.2vw, 18px);
-    transition: padding 380ms cubic-bezier(.4,0,.2,1), font-size 380ms cubic-bezier(.4,0,.2,1), box-shadow 380ms cubic-bezier(.4,0,.2,1);
+    background: #FFF8ED; border: var(--dork-score-border-w) solid #3B230F; box-shadow: 5px 5px 0 rgba(59,35,15,0.3);
+    padding: 13px 24px; border-radius: 22px; font-size: clamp(22px, 5.4vw, 32px);
   }
-  .dork-readout b { color: #FF5FA2; }
+  .dork-readout b {
+    color: #FF5FA2;
+    display: inline-block;
+    min-width: 2ch;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
   .dork-readout.big {
-    /* Keep the boxes at the same visual size as before, but grow them
-       through their actual dimensions instead of transform scaling. This
-       keeps the flex gap visually identical in idle and playing states. */
+    /* Geometry stays fixed across idle/gameplay so starting or ending a
+       round cannot reflow the header, score row, or central button. */
     padding: 13px 24px; border-radius: 22px; font-size: clamp(22px, 5.4vw, 32px);
     transform: none; box-shadow: 5px 5px 0 rgba(59,35,15,0.3);
   }
@@ -406,7 +410,7 @@
     pointer-events: none;
     color: rgba(255,255,255,0.25);
     font-family: 'Fredoka', sans-serif;
-    font-size: clamp(7px, 1.8vw, 10px);
+    font-size: clamp(14px, 3.6vw, 20px);
     font-weight: 700;
     line-height: 1;
     letter-spacing: 0.06em;
@@ -495,7 +499,7 @@
 
 <div id="bgFill"></div>
 
-<div class="version-indicator" aria-hidden="true">v96</div>
+<div class="version-indicator" aria-hidden="true">v97</div>
 
 <div id="logoTile" aria-hidden="true">
   <svg xmlns="http://www.w3.org/2000/svg">
@@ -554,7 +558,7 @@
 
   <div class="dork-subbar" id="scoreBar">
     <div class="dork-readout" id="scoreBox">SCORE <b id="scoreReadout">00</b></div>
-    <div class="dork-readout" id="highScoreBox" style="display:none;">HIGH <b id="highScoreReadout">00</b></div>
+    <div class="dork-readout" id="highScoreBox">HIGH <b id="highScoreReadout">00</b></div>
   </div>
 </div>
 
@@ -626,6 +630,8 @@
     ringAnimation: null,
     failTimeoutId: null,
     scorePulseAnimation: null,
+    highScorePulseAnimation: null,
+    beatHighScore: false,
     timerRunning: false,
     morphingOut: false,
     roundToken: 0,
@@ -911,10 +917,10 @@
     popup.textContent = score + ' COMBO!';
     var sparkleChars = ['✦', '✧', '★', '✶', '✹', '✦'];
     var sparkleColors = ['#FFF8ED', '#FFD93D', '#FF5FA2'];
-    for (var sparkleIndex = 0; sparkleIndex < 32; sparkleIndex++) {
+    for (var sparkleIndex = 0; sparkleIndex < 64; sparkleIndex++) {
       var sparkle = document.createElement('span');
-      var sparkleWave = sparkleIndex < 16 ? 0 : 1;
-      var sparkleAngle = Math.PI * 2 * (sparkleIndex % 16) / 16 +
+      var sparkleWave = sparkleIndex < 32 ? 0 : 1;
+      var sparkleAngle = Math.PI * 2 * (sparkleIndex % 32) / 32 +
         (sparkleWave * 0.1) + (Math.random() - 0.5) * 0.2;
       var sparkleDistance = sparkleWave === 0 ?
         (48 + Math.random() * 36) : (82 + Math.random() * 44);
@@ -1000,9 +1006,9 @@
 
   // Keeps "DORK IT" centered on one line: reset to the CSS-driven size,
   // then shrink in px steps only if it would actually overflow/wrap.
-  var fitTitleRafId = null;
   var titleFitPending = false;
   var scrollResetPending = false;
+  var layoutMorphActive = false;
 
   function fitTitle() {
     var titleEl = el.dorkTitle;
@@ -1011,45 +1017,28 @@
     // iOS Safari emits viewport resize events while its browser chrome
     // settles after a tap. Never let title measurement interrupt the live
     // countdown; service the request during the spoken lead-in instead.
-    if (state.timerRunning) {
+    if (state.timerRunning || layoutMorphActive) {
       titleFitPending = true;
       return;
     }
-    if (fitTitleRafId) return;
     titleFitPending = false;
-    // The title has a CSS transition on font-size for the idle->playing
-    // size change. That transition interferes with this synchronous
-    // shrink loop: reading scrollWidth right after changing font-size
-    // would catch a mid-transition (not final) box size. Disable the
-    // transition while we measure/adjust, then restore it.
+    // Measure and apply in the same JavaScript turn. The previous version
+    // cleared the fitted size and waited for requestAnimationFrame, which
+    // allowed one oversized, right-shifted title frame to be painted.
     var prevTransition = titleEl.style.transition;
     titleEl.style.transition = 'none';
     titleEl.style.fontSize = '';
-    fitTitleRafId = requestAnimationFrame(function () {
-      fitTitleRafId = null;
-      if (state.timerRunning) {
-        titleFitPending = true;
-        titleEl.style.transition = prevTransition;
-        return;
+    var maxWidth = container.clientWidth;
+    var naturalWidth = titleEl.scrollWidth;
+    if (naturalWidth > maxWidth) {
+      var current = parseFloat(getComputedStyle(titleEl).fontSize);
+      if (current && current > 14) {
+        titleEl.style.fontSize = Math.max(14, current * maxWidth / naturalWidth - 0.5) + 'px';
       }
-      var maxWidth = container.clientWidth;
-      var naturalWidth = titleEl.scrollWidth;
-      // v89 repeatedly alternated scrollWidth/getComputedStyle reads with
-      // font-size writes up to 60 times. Each pass forces synchronous layout
-      // in WebKit and the whole loop was visible as the recorded 0.32s timer
-      // freeze. One proportional calculation reaches the same fitted size
-      // with a single layout read and a single style write.
-      if (naturalWidth > maxWidth) {
-        var current = parseFloat(getComputedStyle(titleEl).fontSize);
-        if (current && current > 14) {
-          titleEl.style.fontSize = Math.max(14, current * maxWidth / naturalWidth - 0.5) + 'px';
-        }
-      }
-      // Force layout to flush the final size before re-enabling the
-      // transition, so it doesn't animate from a stale intermediate value.
-      void titleEl.offsetWidth;
-      titleEl.style.transition = prevTransition;
-    });
+    }
+    // Flush only the completed size; no intermediate size can reach paint.
+    void titleEl.offsetWidth;
+    titleEl.style.transition = prevTransition;
   }
 
   function flushDeferredViewportWork() {
@@ -1079,10 +1068,8 @@
   function setPlayingLayout(playing) {
     if (playingLayoutIsActive === playing) return;
     playingLayoutIsActive = playing;
-    el.scoreBox.classList.toggle('big', playing);
-    el.highScoreBox.classList.toggle('big', playing);
-    el.dorkTitle.classList.toggle('playing', playing);
-    fitTitle();
+    // Header and score-card geometry is intentionally invariant. Changing
+    // padding/font size here used to re-center the whole app mid-morph.
   }
 
   function render(skipPlayingLayout) {
@@ -1118,10 +1105,10 @@
 
     el.idleOverlay.style.display = state.gameState === 'idle' ? 'flex' : 'none';
     el.gameoverOverlay.style.display = state.gameState === 'gameover' && !state.morphingOut ? 'flex' : 'none';
-    if (state.highScore > 0) {
-      el.highScoreBox.style.display = 'block';
-      el.highScoreReadout.textContent = String(state.highScore).padStart(2, '0');
-    }
+    // Keep both cards mounted from the first frame. Revealing HIGH only
+    // after score 1 changed the flex row width and shifted every box.
+    el.highScoreBox.style.display = 'block';
+    el.highScoreReadout.textContent = String(state.highScore).padStart(2, '0');
   }
 
   function clearTimer(keepRingVisible) {
@@ -1274,7 +1261,7 @@
     setTimeout(function () { el.pod.classList.remove('wobble'); }, 500);
     failSound();
     speak('Dorked it! Game over!');
-    var isNewHigh = false;
+    var isNewHigh = state.beatHighScore;
     if (state.score > state.highScore) {
       state.highScore = state.score;
       isNewHigh = true;
@@ -1347,6 +1334,24 @@
     setTimeout(doneOnce, 470);
   }
 
+  function pulseReadout(target, animationKey) {
+    if (state[animationKey]) state[animationKey].cancel();
+    if (typeof target.animate === 'function') {
+      var animation = target.animate([
+        { transform: 'scale(1)' },
+        { transform: 'scale(1.13)', offset: 0.45 },
+        { transform: 'scale(1)' }
+      ], { duration: 320, easing: 'ease-in-out' });
+      state[animationKey] = animation;
+      animation.onfinish = animation.oncancel = function () {
+        if (state[animationKey] === animation) state[animationKey] = null;
+      };
+    } else {
+      target.classList.remove('pulse-score');
+      requestAnimationFrame(function () { target.classList.add('pulse-score'); });
+    }
+  }
+
   function handleConfirm(origin) {
     if (state.gameState !== 'playing') return;
     if (state.attempted) return;
@@ -1366,22 +1371,20 @@
     el.confirmBtn.classList.add('pressed');
     el.ringSvg.classList.add('pressed');
     setTimeout(function () { el.confirmBtn.classList.remove('pressed'); el.ringSvg.classList.remove('pressed'); }, 150);
+    var previousHighScore = state.highScore;
     state.score += 1;
+    var scoreIsHigh = state.score >= previousHighScore;
+    if (state.score > state.highScore) {
+      state.highScore = state.score;
+      state.beatHighScore = true;
+      try { localStorage.setItem('dorkit-highscore', JSON.stringify(state.highScore)); } catch (e) {}
+    }
     state.speedMultiplier *= 0.99; // 1% faster each success
     var ns = state.score;
     render();
 
-    if (state.scorePulseAnimation) state.scorePulseAnimation.cancel();
-    if (typeof el.scoreBox.animate === 'function') {
-      state.scorePulseAnimation = el.scoreBox.animate([
-        { transform: 'scale(1)' },
-        { transform: 'scale(1.13)', offset: 0.45 },
-        { transform: 'scale(1)' }
-      ], { duration: 320, easing: 'ease-in-out' });
-    } else {
-      el.scoreBox.classList.remove('pulse-score');
-      requestAnimationFrame(function () { el.scoreBox.classList.add('pulse-score'); });
-    }
+    pulseReadout(el.scoreBox, 'scorePulseAnimation');
+    if (scoreIsHigh) pulseReadout(el.highScoreBox, 'highScorePulseAnimation');
 
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
@@ -1405,6 +1408,7 @@
   function startGame() {
     state.score = 0;
     state.speedMultiplier = 1;
+    state.beatHighScore = false;
     state.gameState = 'playing';
     startSound();
     render();
@@ -1457,6 +1461,7 @@
   }
 
   function morphOverlayIntoButton(overlayEl, onDone) {
+    layoutMorphActive = true;
     var children = Array.prototype.slice.call(overlayEl.children);
     overlayEl.style.pointerEvents = 'none';
 
@@ -1561,6 +1566,8 @@
             children.forEach(function (c) { c.style.cssText = ''; });
             el.confirmBtn.style.cssText = '';
             el.ringSvg.style.cssText = '';
+            layoutMorphActive = false;
+            flushDeferredViewportWork();
           }, CROSSFADE_MS + 20);
         }, CORRECTION_MS + 20);
       }, MORPH_MS + 40);
@@ -1572,6 +1579,7 @@
   // the circle-to-box scale. This folds the vertical movement into the
   // morph instead of correcting it with a snap afterward.
   function morphButtonIntoOverlay(overlayEl) {
+    layoutMorphActive = true;
     var children = Array.prototype.slice.call(overlayEl.children);
     var startRect = el.confirmBtn.getBoundingClientRect();
     var targetHost = overlayEl.parentElement;
@@ -1655,10 +1663,12 @@
           tracker.remove();
 
           state.morphingOut = false;
+          layoutMorphActive = false;
           el.confirmBtn.style.cssText = '';
           el.ringSvg.style.cssText = '';
           clearTimerRing();
           render();
+          flushDeferredViewportWork();
 
           children.forEach(function (c) {
             c.style.transition = 'opacity ' + FADE_MS + 'ms ease';
