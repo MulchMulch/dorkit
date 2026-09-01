@@ -186,7 +186,7 @@
     text-shadow: none;
     animation: wiggle 1.6s ease-in-out infinite;
   }
-  .dork-subbar { display: flex; align-items: center; justify-content: center; gap: 28px; margin-top: 18px; }
+  .dork-subbar { position: relative; display: flex; align-items: center; justify-content: center; gap: 28px; margin-top: 18px; }
   .dork-readout {
     font-family: 'Fredoka', sans-serif; font-weight: 700;
     background: #FFF8ED; border: var(--dork-border-w) solid #3B230F; box-shadow: 3px 3px 0 rgba(59,35,15,0.3);
@@ -230,7 +230,9 @@
   }
   .dork-confirm-wrap.pulsing { animation: none; }
   .dork-ring {
-    position: absolute; inset: 0; width: 100%; height: 100%;
+    /* Give only the canvas layer 4% of extra room on every side. The
+       button, wrapper, timer core, and all layout geometry stay unchanged. */
+    position: absolute; inset: -4%; width: auto; height: auto;
     pointer-events: none; z-index: 1;
     transition: transform 90ms ease;
     contain: strict;
@@ -284,14 +286,27 @@
   .dork-confirm.success { animation: popIn 0.3s ease; }
   .dork-confirm.long-label { font-size: clamp(20px, 5.4vmin, 40px); overflow-wrap: anywhere; word-break: normal; }
   .dork-confirm.combo {
-    box-shadow: 0 0 14px 6px rgba(255,215,0,0.45);
-    animation: comboGlow 1s ease-in-out infinite alternate;
+    box-shadow: 0 0 16px 7px rgba(255,215,0,0.52);
+    animation: none;
   }
+  .dork-confirm.combo.success { animation: popIn 0.3s ease; }
 
   .confetti-piece {
     position: absolute; left: 50%; top: 50%; z-index: 40;
     font-size: clamp(48px, 9vmin, 84px); pointer-events: none;
     will-change: transform, opacity;
+  }
+  .combo-milestone {
+    position: absolute; left: 50%; bottom: calc(100% + 29px); z-index: 50;
+    pointer-events: none; white-space: nowrap;
+    font-family: 'Fredoka', sans-serif; font-weight: 700;
+    font-size: clamp(24px, 7vmin, 48px); color: #FFD93D;
+    -webkit-text-stroke: clamp(1.5px, 0.45vmin, 3px) #3B230F;
+    paint-order: stroke fill;
+    text-shadow: 0 4px 0 rgba(59,35,15,0.24);
+    transform-origin: center center;
+    will-change: transform, opacity;
+    animation: comboMilestonePop 0.95s cubic-bezier(.2,.8,.2,1) forwards;
   }
 
   .dork-overlay {
@@ -350,9 +365,11 @@
     0% { transform: translate(0,0) rotate(0deg) scale(1); opacity: 1; }
     100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 0; }
   }
-  @keyframes comboGlow {
-    from { box-shadow: 0 0 10px 4px rgba(255,215,0,0.4); }
-    to   { box-shadow: 0 0 26px 12px rgba(255,215,0,0.75); }
+  @keyframes comboMilestonePop {
+    0%   { transform: translate(-50%, 18px) scale(0.65) rotate(-5deg); opacity: 0; }
+    22%  { transform: translate(-50%, 0) scale(1.14) rotate(2deg); opacity: 1; }
+    62%  { transform: translate(-50%, -5px) scale(1) rotate(0deg); opacity: 1; }
+    100% { transform: translate(-50%, -38px) scale(0.96) rotate(0deg); opacity: 0; }
   }
   @keyframes scorePulse {
     0%   { transform: scale(1); }
@@ -418,7 +435,7 @@
     </div>
   </div>
 
-  <div class="dork-subbar">
+  <div class="dork-subbar" id="scoreBar">
     <div class="dork-readout" id="scoreBox">SCORE <b id="scoreReadout">00</b></div>
     <div class="dork-readout" id="highScoreBox" style="display:none;">HIGH <b id="highScoreReadout">00</b></div>
   </div>
@@ -466,6 +483,7 @@
     scoreBox: document.getElementById('scoreBox'),
     highScoreBox: document.getElementById('highScoreBox'),
     highScoreReadout: document.getElementById('highScoreReadout'),
+    scoreBar: document.getElementById('scoreBar'),
     timerRing: document.getElementById('timerRing'),
     ringSvg: document.getElementById('ringSvg'),
     pod: document.getElementById('pod'),
@@ -490,6 +508,7 @@
     attempted: false,
     rafId: null,
     failTimeoutId: null,
+    scorePulseAnimation: null,
     ringFadeStartTime: 0,
     morphingOut: false,
     startTime: 0,
@@ -680,6 +699,8 @@
   function popConfetti(action) {
     var meta = META[action] || {};
     var pool = meta.confetti && meta.confetti.length ? meta.confetti : ["🎉", "✨"];
+    var fragment = document.createDocumentFragment();
+    var pieces = [];
     for (var i = 0; i < 10; i++) {
       var angle = Math.random() * Math.PI * 2;
       var dist = 70 + Math.random() * 50;
@@ -693,11 +714,31 @@
       span.style.setProperty('--dy', dy + 'px');
       span.style.setProperty('--rot', rot + 'deg');
       span.style.animation = 'confettiPop 0.65s ease-out forwards';
-      el.pod.appendChild(span);
-      (function (node) {
-        setTimeout(function () { node.remove(); }, 700);
-      })(span);
+      fragment.appendChild(span);
+      pieces.push(span);
     }
+    el.pod.appendChild(fragment);
+    setTimeout(function () {
+      pieces.forEach(function (node) { node.remove(); });
+    }, 700);
+  }
+
+  var activeComboMilestone = null;
+  function showComboMilestone(score) {
+    if (activeComboMilestone) activeComboMilestone.remove();
+    var popup = document.createElement('div');
+    popup.className = 'combo-milestone';
+    popup.textContent = score + ' COMBO!';
+    activeComboMilestone = popup;
+    el.scoreBar.appendChild(popup);
+    popup.addEventListener('animationend', function () {
+      popup.remove();
+      if (activeComboMilestone === popup) activeComboMilestone = null;
+    }, { once: true });
+    setTimeout(function () {
+      if (popup.isConnected) popup.remove();
+      if (activeComboMilestone === popup) activeComboMilestone = null;
+    }, 1100);
   }
 
   function pickOneAction(excluded) {
@@ -844,6 +885,7 @@
   var RING_FADE_IN_MS = 180;
   var ringCtx = el.timerRing.getContext('2d', { alpha: true, desynchronized: true });
   var ringCssSize = 0;
+  var ringBaseSize = 0;
   var ringDpr = 1;
 
   function sizeTimerCanvas() {
@@ -856,6 +898,7 @@
       el.timerRing.height = pixels;
     }
     ringCssSize = size;
+    ringBaseSize = Math.max(1, el.confirmWrap.clientWidth || size / 1.08);
     ringDpr = dpr;
     ringCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
@@ -870,16 +913,46 @@
     if (!ringCtx) return;
     if (!ringCssSize) sizeTimerCanvas();
     var size = ringCssSize;
+    var base = ringBaseSize || size / 1.08;
     ringCtx.clearRect(0, 0, size, size);
     if (progress <= 0 || alpha <= 0) return;
     ringCtx.save();
-    ringCtx.globalAlpha = Math.max(0, Math.min(1, alpha));
-    ringCtx.strokeStyle = color;
-    ringCtx.lineWidth = size * 0.06;
-    ringCtx.lineCap = 'round';
+    var visibility = Math.max(0, Math.min(1, alpha));
+    var center = size / 2;
+    var radius = base * 0.47;
+    var startAngle = -Math.PI / 2;
+    var endAngle = startAngle + Math.PI * 2 * Math.min(1, progress);
+
+    // The gradient now extends 3% of the original ring size beyond the
+    // bright core—exactly double v79. Butt-capped, progressively inset
+    // halo arcs taper underneath the colored round cap, eliminating the
+    // vertical black end-cap line without using blur or filters.
+    ringCtx.strokeStyle = '#000000';
+    ringCtx.lineCap = 'butt';
+    var haloBands = [
+      { width: 0.12, opacity: 0.015, pad: 0.085 },
+      { width: 0.108, opacity: 0.03, pad: 0.065 },
+      { width: 0.096, opacity: 0.05, pad: 0.048 },
+      { width: 0.084, opacity: 0.075, pad: 0.032 },
+      { width: 0.072, opacity: 0.11, pad: 0.016 }
+    ];
+    var isNearlyFull = progress > 0.98;
+    haloBands.forEach(function (band) {
+      var pad = isNearlyFull ? 0 : band.pad;
+      if (endAngle - startAngle <= pad * 2) return;
+      ringCtx.beginPath();
+      ringCtx.arc(center, center, radius, startAngle + pad, endAngle - pad, false);
+      ringCtx.globalAlpha = visibility * band.opacity;
+      ringCtx.lineWidth = base * band.width;
+      ringCtx.stroke();
+    });
+
     ringCtx.beginPath();
-    ringCtx.arc(size / 2, size / 2, size * 0.47, -Math.PI / 2,
-      -Math.PI / 2 + Math.PI * 2 * Math.min(1, progress), false);
+    ringCtx.arc(center, center, radius, startAngle, endAngle, false);
+    ringCtx.lineCap = 'round';
+    ringCtx.globalAlpha = visibility;
+    ringCtx.strokeStyle = color;
+    ringCtx.lineWidth = base * 0.06;
     ringCtx.stroke();
     ringCtx.restore();
   }
@@ -895,7 +968,7 @@
     var elapsed = now - state.startTime;
     var p = elapsed < 0 ? 1 : Math.max(0, 1 - elapsed / state.duration);
     if (p <= 0) { clearTimerRing(); handleFail(); return; }
-    var color = p > 0.5 ? '#4ADE9C' : (p > 0.22 ? '#FFD93D' : '#FF5C5C');
+    var color = p > 0.5 ? '#35E892' : (p > 0.22 ? '#FFD93D' : '#FF5C5C');
     var fadeIn = Math.min(1, Math.max(0, (now - state.ringFadeStartTime) / RING_FADE_IN_MS));
     var fadeOut = p < RING_DOT_THRESHOLD ? p / RING_DOT_THRESHOLD : 1;
     drawTimerRing(p, color, fadeIn * fadeOut);
@@ -970,9 +1043,12 @@
     if (state.gameState !== 'playing') return;
     if (state.attempted) return;
     state.attempted = true;
+    var completedAction = state.currentAction;
     clearTimer();
-    successSound(state.currentAction);
-    popConfetti(Array.isArray(state.currentAction) ? state.currentAction[0] : state.currentAction);
+
+    // Apply the visual response first. The COMBO fanfare and confetti are
+    // deliberately deferred until after the next paint so they cannot
+    // delay the press feedback.
     el.confirmBtn.classList.add('success', 'pressed');
     el.ringSvg.classList.add('pressed');
     setTimeout(function () { el.confirmBtn.classList.remove('pressed'); el.ringSvg.classList.remove('pressed'); }, 150);
@@ -981,9 +1057,26 @@
     state.speedMultiplier *= 0.99; // 1% faster each success
     var ns = state.score;
     render();
-    el.scoreBox.classList.remove('pulse-score');
-    void el.scoreBox.offsetWidth; // restart animation
-    el.scoreBox.classList.add('pulse-score');
+
+    if (state.scorePulseAnimation) state.scorePulseAnimation.cancel();
+    if (typeof el.scoreBox.animate === 'function') {
+      state.scorePulseAnimation = el.scoreBox.animate([
+        { transform: 'scale(1)' },
+        { transform: 'scale(1.13)', offset: 0.45 },
+        { transform: 'scale(1)' }
+      ], { duration: 320, easing: 'ease-in-out' });
+    } else {
+      el.scoreBox.classList.remove('pulse-score');
+      requestAnimationFrame(function () { el.scoreBox.classList.add('pulse-score'); });
+    }
+
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        successSound(completedAction);
+        popConfetti(Array.isArray(completedAction) ? completedAction[0] : completedAction);
+        if (ns > 0 && ns % 5 === 0) showComboMilestone(ns);
+      });
+    });
     setTimeout(function () { nextRound(ns); }, 260);
   }
 
@@ -1217,8 +1310,9 @@
       keepBorderVisuallyConstant(shell, MORPH_MS, trueBorderPx);
 
       setTimeout(function () {
-        // Only now—after the full morph—cross-fade the shell into the real
-        // box. Both occupy the same live rect, so there is no dark flash.
+        // Only now—after the full morph—fade the real box in over the
+        // still-opaque shell. Keeping the lower layer at 100% coverage
+        // prevents the background from darkening during the handoff.
         overlayEl.style.cssText = '';
         overlayEl.style.display = 'flex';
         overlayEl.style.pointerEvents = 'none';
@@ -1227,9 +1321,7 @@
         void overlayEl.offsetWidth;
 
         requestAnimationFrame(function () {
-          tracker.style.transition = 'opacity ' + CROSSFADE_MS + 'ms ease';
           overlayEl.style.transition = 'opacity ' + CROSSFADE_MS + 'ms ease';
-          tracker.style.opacity = '0';
           overlayEl.style.opacity = '1';
         });
 
