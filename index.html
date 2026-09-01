@@ -78,10 +78,17 @@
     display: flex; align-items: center; justify-content: center;
     margin: 0 auto 18px;
     width: clamp(240px, 82vmin, 640px); max-width: 100%; min-width: 0;
+    transform: translate3d(0, 0, 0);
+    transition: transform 380ms cubic-bezier(.4,0,.2,1);
+    will-change: transform;
     /* Text shadows are paint outside the measured glyph box. Keeping this
        visible prevents the outermost black title stroke from being clipped. */
     overflow: visible;
   }
+  /* The button wrapper rests 8px above the center of its reserved area.
+     Moving the header up by twice that amount makes its visual clearance
+     match the clearance between the button and the lower score cards. */
+  .dork-header.playing { transform: translate3d(0, -16px, 0); }
   .dork-title {
     font-family: 'Fredoka One', 'Baloo 2', sans-serif; font-weight: 400; font-size: clamp(64px, 22vw, 180px);
     color: #FFF8ED;
@@ -377,7 +384,10 @@
     text-shadow: 0 4px 0 rgba(59,35,15,0.24);
     transform-origin: center center;
     will-change: transform, opacity;
-    animation: comboMilestonePop 0.9s cubic-bezier(.2,.8,.2,1) forwards;
+    opacity: 0;
+    animation:
+      comboMilestonePop 1.05s cubic-bezier(.22,.61,.36,1) forwards,
+      comboMilestoneFade 1.05s linear forwards;
   }
   .combo-milestone::before,
   .combo-milestone::after {
@@ -389,7 +399,7 @@
     -webkit-text-stroke: 0;
     text-shadow: 0 0 8px rgba(255,217,61,1);
     opacity: 0;
-    animation: comboSparkleTwinkle 0.95s ease-out forwards;
+    animation: comboSparkleTwinkle 0.9s ease-out forwards;
   }
   .combo-milestone::before { left: -1.15em; top: -0.48em; }
   .combo-milestone::after {
@@ -478,10 +488,17 @@
     100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 0; }
   }
   @keyframes comboMilestonePop {
-    0%   { transform: translate(-50%, 18px) scale(0.65) rotate(-5deg); opacity: 0; }
-    22%  { transform: translate(-50%, 0) scale(1.14) rotate(2deg); opacity: 1; }
-    62%  { transform: translate(-50%, -5px) scale(1) rotate(0deg); opacity: 1; }
-    100% { transform: translate(-50%, -38px) scale(0.96) rotate(0deg); opacity: 0; }
+    0%   { transform: translate(-50%, 12px) scale(0.82) rotate(-3deg); }
+    30%  { transform: translate(-50%, 0) scale(1.06) rotate(1deg); }
+    62%  { transform: translate(-50%, -5px) scale(1) rotate(0deg); }
+    100% { transform: translate(-50%, -38px) scale(0.96) rotate(0deg); }
+  }
+  @keyframes comboMilestoneFade {
+    0%   { opacity: 0; }
+    12%  { opacity: 0.25; }
+    30%  { opacity: 1; }
+    72%  { opacity: 1; }
+    100% { opacity: 0; }
   }
   @keyframes comboSparkleTwinkle {
     0%   { transform: scale(0.25) rotate(-25deg); opacity: 0; }
@@ -506,7 +523,7 @@
 
 <div id="bgFill"></div>
 
-<div class="version-indicator" aria-hidden="true">v98</div>
+<div class="version-indicator" aria-hidden="true">v100</div>
 
 <div id="logoTile" aria-hidden="true">
   <svg xmlns="http://www.w3.org/2000/svg">
@@ -945,14 +962,14 @@
     activeComboMilestone = popup;
     el.scoreBar.appendChild(popup);
     popup.addEventListener('animationend', function (event) {
-      if (event.target !== popup || event.animationName !== 'comboMilestonePop') return;
+      if (event.target !== popup || event.animationName !== 'comboMilestoneFade') return;
       popup.remove();
       if (activeComboMilestone === popup) activeComboMilestone = null;
     });
     setTimeout(function () {
       if (popup.isConnected) popup.remove();
       if (activeComboMilestone === popup) activeComboMilestone = null;
-    }, 1050);
+    }, 1150);
   }
 
   function pickWeightedAction(pool) {
@@ -1079,6 +1096,7 @@
     // fixed so the header, button and overlay never reflow during the morph.
     el.scoreBox.classList.toggle('big', playing);
     el.highScoreBox.classList.toggle('big', playing);
+    el.dorkHeader.classList.toggle('playing', playing);
   }
 
   function render(skipPlayingLayout) {
@@ -1701,6 +1719,36 @@
   }
 
   // ---------- controls ----------
+  var highScoreTapTimes = [];
+  var HIGH_SCORE_RESET_WINDOW_MS = 900;
+  el.highScoreBox.addEventListener('click', function (e) {
+    // Never treat gameplay taps—or taps during either geometry morph—as
+    // reset gestures. The reset is intentionally available only at rest.
+    if (state.gameState === 'playing' || state.morphingOut || layoutMorphActive) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var now = performance.now();
+    highScoreTapTimes = highScoreTapTimes.filter(function (tapTime) {
+      return now - tapTime <= HIGH_SCORE_RESET_WINDOW_MS;
+    });
+    highScoreTapTimes.push(now);
+    if (highScoreTapTimes.length < 3) return;
+
+    highScoreTapTimes = [];
+    state.highScore = 0;
+    state.beatHighScore = false;
+    try { localStorage.removeItem('dorkit-highscore'); } catch (storageError) {}
+    el.highScoreReadout.textContent = '00';
+    if (state.gameState === 'gameover') el.gameoverSub.textContent = 'HIGH SCORE: 0';
+    if (typeof el.highScoreBox.animate === 'function') {
+      el.highScoreBox.animate([
+        { opacity: 1 },
+        { opacity: 0.32, offset: 0.45 },
+        { opacity: 1 }
+      ], { duration: 260, easing: 'ease-in-out' });
+    }
+  });
+
   el.startBtn.addEventListener('click', function (e) {
     e.preventDefault();
     unlockAudio();
