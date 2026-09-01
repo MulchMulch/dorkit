@@ -233,11 +233,11 @@
     position: absolute; inset: 0; width: 100%; height: 100%;
     pointer-events: none; z-index: 1;
     transition: transform 90ms ease;
+    contain: strict;
   }
   .dork-ring.pressed { transform: none; }
   .dork-ring-fg {
-    fill: none; stroke: #4ADE9C; stroke-width: 6; stroke-linecap: round;
-    transition: none;
+    display: block; width: 100%; height: 100%;
   }
 
   /* The reverse morph uses a viewport-fixed tracker plus a nested shell.
@@ -398,11 +398,9 @@
   <div class="dork-relative">
     <div class="dork-pod" id="pod">
       <div class="dork-confirm-wrap" id="confirmWrap">
-        <svg class="dork-ring" id="ringSvg" viewBox="0 0 100 100">
-          <circle class="dork-ring-fg" id="timerRing" cx="50" cy="50" r="47"
-                  transform="rotate(-90 50 50)"
-                  stroke-dasharray="295.31" stroke-dashoffset="0"></circle>
-        </svg>
+        <div class="dork-ring" id="ringSvg">
+          <canvas class="dork-ring-fg" id="timerRing" aria-hidden="true"></canvas>
+        </div>
         <button class="dork-confirm idle-bounce" id="confirmBtn">READY?</button>
       </div>
     </div>
@@ -492,10 +490,7 @@
     attempted: false,
     rafId: null,
     failTimeoutId: null,
-    ringAnimation: null,
-    ringColorTimeoutIds: [],
-    lastRingPaint: 0,
-    ringColor: '',
+    ringFadeStartTime: 0,
     morphingOut: false,
     startTime: 0,
     duration: 3400,
@@ -623,6 +618,17 @@
   }
   function successSound(action) {
     playActionSound(action);
+  }
+  function startSound() {
+    glide(300, 620, 0.09, 'square', 0.28);
+    beep(784, 0.08, 'square', 0.3, 0.08);
+    beep(1046, 0.12, 'square', 0.34, 0.15);
+  }
+  function unlockAudio() {
+    try {
+      var ctx = getCtx();
+      if (ctx && ctx.state === 'suspended') ctx.resume();
+    } catch (e) {}
   }
   function failSound() {
     beep(220, 0.3, 'sawtooth', 0.2);
@@ -813,17 +819,9 @@
       el.confirmBtn.textContent = 'READY?';
       el.confirmBtn.style.borderColor = '#3B230F';
       el.confirmBtn.classList.remove('long-label');
-      // Resting ring look for idle/game-over: fully empty (drained), not
-      // full. Snapping it back to "full" here was what caused a red ring
-      // to flash in right as the game ended (the round's last color was
-      // red, and this reset the offset to "full" before the game-over
-      // box had grown large enough to cover it). The morph-in transition
-      // explicitly resets the ring to full green itself, so it's still
-      // shown correctly once the next round actually starts.
-      el.timerRing.style.strokeDashoffset = RING_CIRCUMFERENCE;
-      // NOTE: opacity is intentionally left alone here — it gets reset
-      // once the button-into-box morph has actually finished, not the
-      // instant we enter this state (see morphButtonIntoOverlay).
+      // Idle/game-over always uses a genuinely empty canvas. The next
+      // round draws a fresh green ring and fades it in from zero.
+      clearTimerRing();
     }
 
     el.idleOverlay.style.display = state.gameState === 'idle' ? 'flex' : 'none';
@@ -837,84 +835,78 @@
   function clearTimer() {
     if (state.rafId) cancelAnimationFrame(state.rafId);
     if (state.failTimeoutId) clearTimeout(state.failTimeoutId);
-    if (state.ringAnimation) state.ringAnimation.cancel();
-    state.ringColorTimeoutIds.forEach(function (id) { clearTimeout(id); });
     state.rafId = null;
     state.failTimeoutId = null;
-    state.ringAnimation = null;
-    state.ringColorTimeoutIds = [];
+    clearTimerRing();
   }
 
   var RING_START_DELAY = 200; // ms — hold the ring full before it starts draining
+  var RING_FADE_IN_MS = 180;
+  var ringCtx = el.timerRing.getContext('2d', { alpha: true, desynchronized: true });
+  var ringCssSize = 0;
+  var ringDpr = 1;
 
-  var RING_FRAME_MS = 1000 / 30;
+  function sizeTimerCanvas() {
+    if (!ringCtx) return;
+    var size = Math.max(1, el.ringSvg.clientWidth || el.confirmWrap.clientWidth || 1);
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var pixels = Math.max(1, Math.round(size * dpr));
+    if (el.timerRing.width !== pixels || el.timerRing.height !== pixels) {
+      el.timerRing.width = pixels;
+      el.timerRing.height = pixels;
+    }
+    ringCssSize = size;
+    ringDpr = dpr;
+    ringCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function clearTimerRing() {
+    if (!ringCtx) return;
+    if (!ringCssSize) sizeTimerCanvas();
+    ringCtx.clearRect(0, 0, ringCssSize, ringCssSize);
+  }
+
+  function drawTimerRing(progress, color, alpha) {
+    if (!ringCtx) return;
+    if (!ringCssSize) sizeTimerCanvas();
+    var size = ringCssSize;
+    ringCtx.clearRect(0, 0, size, size);
+    if (progress <= 0 || alpha <= 0) return;
+    ringCtx.save();
+    ringCtx.globalAlpha = Math.max(0, Math.min(1, alpha));
+    ringCtx.strokeStyle = color;
+    ringCtx.lineWidth = size * 0.06;
+    ringCtx.lineCap = 'round';
+    ringCtx.beginPath();
+    ringCtx.arc(size / 2, size / 2, size * 0.47, -Math.PI / 2,
+      -Math.PI / 2 + Math.PI * 2 * Math.min(1, progress), false);
+    ringCtx.stroke();
+    ringCtx.restore();
+  }
+
+  window.addEventListener('resize', function () {
+    ringCssSize = 0;
+    sizeTimerCanvas();
+    if (state.gameState !== 'playing') clearTimerRing();
+  });
+
   function loop(now) {
     if (state.gameState !== 'playing') return;
     var elapsed = now - state.startTime;
-    if (elapsed < 0) {
-      if (!state.lastRingPaint) {
-        el.timerRing.style.strokeDashoffset = 0;
-        el.timerRing.style.stroke = '#4ADE9C';
-        el.timerRing.style.opacity = '1';
-        state.ringColor = '#4ADE9C';
-        state.lastRingPaint = now;
-      }
-      state.rafId = requestAnimationFrame(loop);
-      return;
-    }
-    var p = Math.max(0, 1 - elapsed / state.duration);
-    if (p <= 0) { handleFail(); return; }
-    // Limit SVG writes on phones. The actual deadline uses a separate
-    // timeout, so the game timing remains exact even if a frame is late.
-    if (now - state.lastRingPaint >= RING_FRAME_MS) {
-      el.timerRing.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - p));
-      var color = p > 0.5 ? '#4ADE9C' : (p > 0.22 ? '#FFD93D' : '#FF5C5C');
-      if (color !== state.ringColor) {
-        el.timerRing.style.stroke = color;
-        state.ringColor = color;
-      }
-      el.timerRing.style.opacity = p < RING_DOT_THRESHOLD ? String(p / RING_DOT_THRESHOLD) : '1';
-      state.lastRingPaint = now;
-    }
+    var p = elapsed < 0 ? 1 : Math.max(0, 1 - elapsed / state.duration);
+    if (p <= 0) { clearTimerRing(); handleFail(); return; }
+    var color = p > 0.5 ? '#4ADE9C' : (p > 0.22 ? '#FFD93D' : '#FF5C5C');
+    var fadeIn = Math.min(1, Math.max(0, (now - state.ringFadeStartTime) / RING_FADE_IN_MS));
+    var fadeOut = p < RING_DOT_THRESHOLD ? p / RING_DOT_THRESHOLD : 1;
+    drawTimerRing(p, color, fadeIn * fadeOut);
     state.rafId = requestAnimationFrame(loop);
   }
 
   function startRingTimer() {
-    el.timerRing.style.strokeDashoffset = '0';
-    el.timerRing.style.stroke = '#4ADE9C';
-    el.timerRing.style.opacity = '1';
-    state.ringColor = '#4ADE9C';
-
-    // Use one native animation instead of changing a large SVG circle from
-    // JavaScript every frame. On iPhone the previous overlapping dash and
-    // color transitions became expensive as the arc entered its final
-    // quarter. The browser can schedule this animation independently of
-    // gameplay JavaScript, while the exact fail deadline remains a timeout.
-    if (typeof el.timerRing.animate === 'function') {
-      var fadeStart = 1 - RING_DOT_THRESHOLD;
-      state.ringAnimation = el.timerRing.animate([
-        { strokeDashoffset: '0', opacity: '1', offset: 0 },
-        { strokeDashoffset: String(RING_CIRCUMFERENCE * fadeStart), opacity: '1', offset: fadeStart },
-        { strokeDashoffset: String(RING_CIRCUMFERENCE), opacity: '0', offset: 1 }
-      ], {
-        duration: state.duration,
-        delay: RING_START_DELAY,
-        easing: 'linear',
-        fill: 'forwards'
-      });
-    } else {
-      // Older-browser fallback; modern iOS Safari uses the native path above.
-      state.rafId = requestAnimationFrame(loop);
-    }
-
-    state.ringColorTimeoutIds = [
-      setTimeout(function () {
-        if (state.gameState === 'playing') el.timerRing.style.stroke = '#FFD93D';
-      }, RING_START_DELAY + state.duration * 0.5),
-      setTimeout(function () {
-        if (state.gameState === 'playing') el.timerRing.style.stroke = '#FF5C5C';
-      }, RING_START_DELAY + state.duration * 0.78)
-    ];
+    sizeTimerCanvas();
+    clearTimerRing();
+    state.ringFadeStartTime = performance.now();
+    state.rafId = requestAnimationFrame(loop);
     state.failTimeoutId = setTimeout(handleFail, RING_START_DELAY + state.duration);
   }
 
@@ -930,8 +922,6 @@
     var baseDuration = action === 'COMBO' ? 6000 : (count === 3 ? 4000 : (count === 2 ? 3500 : 3000));
     state.duration = baseDuration * state.speedMultiplier;
     state.startTime = performance.now() + RING_START_DELAY;
-    state.lastRingPaint = 0;
-    state.ringColor = '#4ADE9C';
 
     var sayText;
     if (Array.isArray(action)) {
@@ -1001,6 +991,7 @@
     state.score = 0;
     state.speedMultiplier = 1;
     state.gameState = 'playing';
+    startSound();
     render();
     nextRound(0);
   }
@@ -1065,12 +1056,9 @@
     el.confirmBtn.style.opacity = '0';
     el.ringSvg.style.opacity = '0';
 
-    // Reset the timer ring to its "full and green" resting look right
-    // away, so as the box shrinks down and reveals the ring underneath,
-    // we see green (not a leftover red from a previous fail).
-    el.timerRing.style.strokeDashoffset = 0;
-    el.timerRing.style.stroke = '#4ADE9C';
-    el.timerRing.style.opacity = '1';
+    // Keep the ring empty until the new round starts; startRingTimer()
+    // draws it with a short fade-in during the final handoff.
+    clearTimerRing();
 
     // 1) Quickly fade out all the overlay's content.
     children.forEach(function (c) {
@@ -1253,7 +1241,7 @@
           state.morphingOut = false;
           el.confirmBtn.style.cssText = '';
           el.ringSvg.style.cssText = '';
-          el.timerRing.style.opacity = '1';
+          clearTimerRing();
           render();
 
           children.forEach(function (c) {
@@ -1274,10 +1262,12 @@
   // ---------- controls ----------
   el.startBtn.addEventListener('click', function (e) {
     e.preventDefault();
+    unlockAudio();
     morphOverlayIntoButton(el.idleOverlay, startGame);
   });
   el.playAgainBtn.addEventListener('click', function (e) {
     e.preventDefault();
+    unlockAudio();
     morphOverlayIntoButton(el.gameoverOverlay, startGame);
   });
   // Tap/click ANYWHERE on the screen completes the action — not just the
