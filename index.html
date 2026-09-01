@@ -272,7 +272,7 @@
   }
   .dork-confirm-wrap.pulsing { animation: none; }
   .dork-ring {
-    /* Give only the canvas layer 4% of extra room on every side. The
+    /* Give only the timer layer 4% of extra room on every side. The
        button, wrapper, timer core, and all layout geometry stay unchanged. */
     position: absolute; inset: -4%; width: auto; height: auto;
     pointer-events: none; z-index: 1;
@@ -282,11 +282,21 @@
   .dork-ring.pressed { transform: none; }
   .dork-ring-fg {
     display: block; width: 100%; height: 100%;
-    /* Keep Safari from merging the frequently repainted timer canvas into
-       the much more expensive text/background paint layer. */
+    overflow: visible;
+    /* Keep the native SVG animation on an isolated compositing surface. */
     transform: translateZ(0);
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
+  }
+  .dork-ring-progress {
+    fill: none;
+    stroke: #35E892;
+    stroke-width: 6;
+    stroke-linecap: round;
+    stroke-dasharray: 295.31;
+    stroke-dashoffset: 295.31;
+    opacity: 0;
+    shape-rendering: geometricPrecision;
   }
 
   /* The reverse morph uses a viewport-fixed tracker plus a nested shell.
@@ -483,7 +493,9 @@
     <div class="dork-pod" id="pod">
       <div class="dork-confirm-wrap" id="confirmWrap">
         <div class="dork-ring" id="ringSvg">
-          <canvas class="dork-ring-fg" id="timerRing" aria-hidden="true"></canvas>
+          <svg class="dork-ring-fg" viewBox="0 0 108 108" aria-hidden="true" focusable="false">
+            <circle class="dork-ring-progress" id="timerRing" cx="54" cy="54" r="47" transform="rotate(-90 54 54)"></circle>
+          </svg>
         </div>
         <button class="dork-confirm idle-bounce" id="confirmBtn">READY?</button>
       </div>
@@ -573,10 +585,9 @@
     highScore: 0,
     muted: false,
     attempted: false,
-    rafId: null,
+    ringAnimation: null,
     failTimeoutId: null,
     scorePulseAnimation: null,
-    ringFadeStartTime: 0,
     timerRunning: false,
     morphingOut: false,
     roundToken: 0,
@@ -593,6 +604,9 @@
   // ---------- audio ----------
   var audioCtx = null;
   var masterBus = null;
+  // Keep the completed iOS speech object alive until its round ends. WebKit
+  // can otherwise reclaim the native utterance mid-countdown in a costly GC.
+  var activeUtterance = null;
   // Overall SFX loudness boost + a gentle compressor so sounds still read
   // loud and punchy on quiet phone speakers without clipping.
   var SFX_GAIN = 2.28;
@@ -625,6 +639,11 @@
       osc.frequency.setValueAtTime(freq, t0);
       gain.gain.setValueAtTime(sfxVol(vol), t0);
       osc.connect(gain); gain.connect(masterBus || ctx.destination);
+      osc.onended = function () {
+        osc.onended = null;
+        try { osc.disconnect(); } catch (e) {}
+        try { gain.disconnect(); } catch (e) {}
+      };
       osc.start(t0);
       gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
       osc.stop(t0 + dur);
@@ -642,6 +661,11 @@
       osc.frequency.exponentialRampToValueAtTime(freq2, t0 + dur);
       gain.gain.setValueAtTime(sfxVol(vol), t0);
       osc.connect(gain); gain.connect(masterBus || ctx.destination);
+      osc.onended = function () {
+        osc.onended = null;
+        try { osc.disconnect(); } catch (e) {}
+        try { gain.disconnect(); } catch (e) {}
+      };
       osc.start(t0);
       gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
       osc.stop(t0 + dur);
@@ -763,8 +787,10 @@
     if (state.muted) { finish(); return; }
     try {
       if (!window.speechSynthesis || typeof SpeechSynthesisUtterance === 'undefined') { finish(); return; }
+      activeUtterance = null;
       window.speechSynthesis.cancel();
       var u = new SpeechSynthesisUtterance(text);
+      activeUtterance = u;
       // Fast, upbeat, hyped-up delivery — quick clip with a slightly
       // raised pitch for extra enthusiasm.
       u.rate = 1.1; u.pitch = 1.05; u.volume = 1;
@@ -1004,7 +1030,7 @@
       el.confirmBtn.textContent = 'READY?';
       el.confirmBtn.style.borderColor = '#3B230F';
       el.confirmBtn.classList.remove('long-label');
-      // Idle/game-over always uses a genuinely empty canvas. The next
+      // Idle/game-over always uses a hidden timer stroke. The next
       // round draws a fresh green ring and fades it in from zero.
       clearTimerRing();
     }
@@ -1018,177 +1044,92 @@
   }
 
   function clearTimer(keepRingVisible) {
-    if (state.rafId) cancelAnimationFrame(state.rafId);
     if (state.failTimeoutId) clearTimeout(state.failTimeoutId);
-    state.rafId = null;
     state.failTimeoutId = null;
+    stopRingAnimation(!!keepRingVisible);
     state.timerRunning = false;
+    // Releasing speech here is safe: the countdown has stopped, so any iOS
+    // native cleanup cannot interrupt the timer animation.
+    activeUtterance = null;
     if (!keepRingVisible) clearTimerRing();
   }
 
   var RING_START_DELAY = 200; // ms — hold the ring full before it starts draining
   var RING_FADE_IN_MS = 180;
-  var IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  // The ring is large and heavily alpha-blended. A 1.25x backing store is
-  // still crisp for this thick stroke on iPhone, while using only ~39% of
-  // the pixels of the former 2x canvas.
-  var RING_MAX_DPR = IS_IOS ? 1.25 : 2;
-  // Precompute the full temporal color ramp once. Each countdown frame
-  // performs only an array lookup, avoiding both the old hard color-state
-  // switches and new per-frame rgb-string allocations on Safari.
-  var RING_COLOR_PALETTE = (function () {
-    var colors = [];
-    var steps = 180;
-    var green = [53, 232, 146];
-    var yellow = [255, 217, 61];
-    var red = [255, 92, 92];
-    function channel(from, to, amount) {
-      return Math.round(from + (to - from) * amount);
+  function stopRingAnimation(preserveVisual) {
+    var animation = state.ringAnimation;
+    if (!animation) return;
+    var snapshot = null;
+    if (preserveVisual) {
+      var liveStyle = getComputedStyle(el.timerRing);
+      snapshot = {
+        dashoffset: liveStyle.strokeDashoffset,
+        stroke: liveStyle.stroke,
+        opacity: liveStyle.opacity
+      };
     }
-    for (var colorIndex = 0; colorIndex <= steps; colorIndex++) {
-      var position = colorIndex / steps;
-      var from = position <= 0.5 ? green : yellow;
-      var to = position <= 0.5 ? yellow : red;
-      var amount = position <= 0.5 ? position * 2 : (position - 0.5) * 2;
-      colors.push('rgb(' + channel(from[0], to[0], amount) + ',' +
-        channel(from[1], to[1], amount) + ',' +
-        channel(from[2], to[2], amount) + ')');
+    state.ringAnimation = null;
+    animation.onfinish = null;
+    animation.cancel();
+    if (snapshot) {
+      el.timerRing.style.strokeDashoffset = snapshot.dashoffset;
+      el.timerRing.style.stroke = snapshot.stroke;
+      el.timerRing.style.opacity = snapshot.opacity;
     }
-    return colors;
-  })();
-  var ringCtx = el.timerRing.getContext('2d', { alpha: true, desynchronized: true });
-  var ringCssSize = 0;
-  var ringBaseSize = 0;
-  var ringDpr = 1;
-
-  function sizeTimerCanvas() {
-    if (!ringCtx) return;
-    var size = Math.max(1, el.ringSvg.clientWidth || el.confirmWrap.clientWidth || 1);
-    var dpr = Math.min(window.devicePixelRatio || 1, RING_MAX_DPR);
-    var pixels = Math.max(1, Math.round(size * dpr));
-    if (el.timerRing.width !== pixels || el.timerRing.height !== pixels) {
-      el.timerRing.width = pixels;
-      el.timerRing.height = pixels;
-    }
-    ringCssSize = size;
-    ringBaseSize = Math.max(1, el.confirmWrap.clientWidth || size / 1.08);
-    ringDpr = dpr;
-    ringCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  }
-
-  function clearTimerRing() {
-    if (!ringCtx) return;
-    if (!ringCssSize) sizeTimerCanvas();
-    ringCtx.clearRect(0, 0, ringCssSize, ringCssSize);
   }
 
   function drawTimerRing(progress, color, alpha) {
-    if (!ringCtx) return;
-    if (!ringCssSize) sizeTimerCanvas();
-    var size = ringCssSize;
-    var base = ringBaseSize || size / 1.08;
-    ringCtx.clearRect(0, 0, size, size);
-    if (progress <= 0 || alpha <= 0) return;
-    var visibility = Math.max(0, Math.min(1, alpha));
-    var center = size / 2;
-    var radius = base * 0.47;
-    var startAngle = -Math.PI / 2;
-    var endAngle = startAngle + Math.PI * 2 * Math.min(1, progress);
-
-    // Draw only the solid colored countdown stroke. The former stack of
-    // translucent black arcs created the soft gradient/halo around it.
-    ringCtx.beginPath();
-    ringCtx.arc(center, center, radius, startAngle, endAngle, false);
-    ringCtx.lineCap = 'round';
-    ringCtx.globalAlpha = visibility;
-    ringCtx.strokeStyle = color;
-    ringCtx.lineWidth = base * 0.06;
-    ringCtx.stroke();
-    // Restore the only state that may otherwise leak into a later frame;
-    // avoiding save()/restore() removes a canvas-state stack operation from
-    // every Safari draw while preserving identical output.
-    ringCtx.globalAlpha = 1;
+    var p = Math.max(0, Math.min(1, progress));
+    el.timerRing.style.strokeDasharray = RING_CIRCUMFERENCE + 'px';
+    el.timerRing.style.strokeDashoffset = (RING_CIRCUMFERENCE * (1 - p)) + 'px';
+    el.timerRing.style.stroke = color;
+    el.timerRing.style.opacity = String(Math.max(0, Math.min(1, alpha)));
   }
 
-  var ringResizeRafId = null;
-  window.addEventListener('resize', function () {
-    // iOS Safari's URL bar auto-collapses roughly a second or two after
-    // the player taps to start a round — right in the middle of a typical
-    // round's countdown. That firing alone is harmless, but reacting to it
-    // isn't free: sizeTimerCanvas() reads clientWidth (forcing a
-    // synchronous layout flush) and, if the computed pixel size comes out
-    // even one pixel different due to rounding, reassigns the canvas's
-    // width/height — which unconditionally wipes and reallocates its
-    // entire backing store, even when reassigned to visually the same
-    // size. That reallocation, landing mid-draw-loop, is the kind of
-    // one-time hitch that would show up partway through the countdown
-    // and nowhere else — and only on iOS, since desktop Safari has no
-    // collapsing chrome to trigger it. Skip reacting entirely while a
-    // round is live; the ring just keeps drawing at its current size for
-    // the rest of this one round, and sizeTimerCanvas() runs fresh again
-    // (via nextRound/startRingTimer) the moment the next round begins.
-    if (state.gameState === 'playing') return;
-    // Safari may emit a burst of resize events while its browser chrome
-    // settles. Coalesce them into one canvas measurement per visual frame.
-    if (ringResizeRafId) return;
-    ringResizeRafId = requestAnimationFrame(function () {
-      ringResizeRafId = null;
-      ringCssSize = 0;
-      sizeTimerCanvas();
-      if (state.gameState !== 'playing') clearTimerRing();
-    });
-  });
-
-  function loop(now) {
-    if (state.gameState !== 'playing') return;
-    var elapsed = now - state.startTime;
-    // The full ring is already painted during the pre-countdown hold, so
-    // do no canvas work at all until elapsed time actually begins.
-    if (elapsed < 0) {
-      state.rafId = requestAnimationFrame(loop);
-      return;
-    }
-    var p = Math.max(0, 1 - elapsed / state.duration);
-    if (p <= 0) { clearTimerRing(); handleFail(); return; }
-    var colorStep = Math.min(RING_COLOR_PALETTE.length - 1,
-      Math.max(0, Math.round((1 - p) * (RING_COLOR_PALETTE.length - 1))));
-    var color = RING_COLOR_PALETTE[colorStep];
-    var fadeIn = Math.min(1, Math.max(0, (now - state.ringFadeStartTime) / RING_FADE_IN_MS));
-    var fadeOut = p < RING_DOT_THRESHOLD ? p / RING_DOT_THRESHOLD : 1;
-    drawTimerRing(p, color, fadeIn * fadeOut);
-    state.rafId = requestAnimationFrame(loop);
+  function clearTimerRing() {
+    stopRingAnimation(false);
+    drawTimerRing(0, '#35E892', 0);
   }
 
   function startRingTimer() {
-    if (state.rafId) cancelAnimationFrame(state.rafId);
-    state.rafId = null;
-    sizeTimerCanvas();
+    stopRingAnimation(false);
     // The waiting ring is already visible. Keep it fully green through
     // the handoff so speech completion starts motion, not a second fade.
     drawTimerRing(1, '#35E892', 1);
     state.startTime = performance.now() + RING_START_DELAY;
-    state.ringFadeStartTime = performance.now() - RING_FADE_IN_MS;
     state.timerRunning = true;
-    state.rafId = requestAnimationFrame(loop);
+    var dotFadeOffset = 1 - RING_DOT_THRESHOLD;
+    var animation = el.timerRing.animate([
+      { offset: 0, strokeDashoffset: '0px', stroke: '#35E892', opacity: 1 },
+      { offset: 0.5, strokeDashoffset: (RING_CIRCUMFERENCE * 0.5) + 'px', stroke: '#FFD93D', opacity: 1 },
+      { offset: dotFadeOffset, strokeDashoffset: (RING_CIRCUMFERENCE * dotFadeOffset) + 'px', stroke: '#FF5F5C', opacity: 1 },
+      { offset: 1, strokeDashoffset: RING_CIRCUMFERENCE + 'px', stroke: '#FF5C5C', opacity: 0 }
+    ], {
+      duration: state.duration,
+      delay: RING_START_DELAY,
+      easing: 'linear',
+      fill: 'both'
+    });
+    state.ringAnimation = animation;
     state.failTimeoutId = setTimeout(handleFail, RING_START_DELAY + state.duration);
   }
 
   function showWaitingRing(roundToken) {
-    sizeTimerCanvas();
     clearTimerRing();
-    var fadeStart = performance.now();
-    function fadeInWaitingRing(now) {
-      if (state.gameState !== 'playing' || state.attempted || roundToken !== state.roundToken) return;
-      var visibility = Math.min(1, Math.max(0, (now - fadeStart) / RING_FADE_IN_MS));
-      drawTimerRing(1, '#35E892', visibility);
-      if (visibility < 1) {
-        state.rafId = requestAnimationFrame(fadeInWaitingRing);
-      } else {
-        state.rafId = null;
+    drawTimerRing(1, '#35E892', 0);
+    var fade = el.timerRing.animate([
+      { opacity: 0 },
+      { opacity: 1 }
+    ], { duration: RING_FADE_IN_MS, easing: 'linear', fill: 'both' });
+    state.ringAnimation = fade;
+    fade.onfinish = function () {
+      if (state.ringAnimation !== fade) return;
+      state.ringAnimation = null;
+      fade.cancel();
+      if (state.gameState === 'playing' && !state.attempted && roundToken === state.roundToken) {
+        drawTimerRing(1, '#35E892', 1);
       }
-    }
-    state.rafId = requestAnimationFrame(fadeInWaitingRing);
+    };
   }
 
   function nextRound(nextScore, ringIsAlreadyFull) {
@@ -1279,7 +1220,7 @@
       onDone();
     }
 
-    // Split the motion into two animations so the canvas reset is tied to
+    // Split the motion into two animations so the ring reset is tied to
     // the actual end of the grow phase, rather than a timer that can drift
     // under load on mobile Safari.
     if (typeof el.confirmBtn.animate === 'function') {
@@ -1327,7 +1268,7 @@
       clientY: origin.clientY
     } : null;
     // Stop countdown/failure scheduling but preserve the exact remaining
-    // ring on the canvas until the button has grown over it.
+    // ring visible until the button has grown over it.
     clearTimer(true);
 
     // Apply the visual response first. The COMBO fanfare and confetti are
