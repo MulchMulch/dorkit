@@ -781,7 +781,7 @@
 
 <div id="bgFill"></div>
 
-<div class="version-indicator" aria-hidden="true">v0.157</div>
+<div class="version-indicator" aria-hidden="true">v0.158</div>
 
 <div id="logoTile" aria-hidden="true">
   <svg xmlns="http://www.w3.org/2000/svg">
@@ -1425,9 +1425,11 @@
     return pool[pool.length - 1];
   }
 
-  function availableActionPool(excluded, disallowWetWilly) {
+  function availableActionPool(excluded, disallowWetWilly, disallowBully) {
     var pool = REGULAR_ACTIONS.filter(function (action) {
-      return !disallowWetWilly || action !== 'WILLY';
+      if (disallowWetWilly && action === 'WILLY') return false;
+      if (disallowBully && action === 'BULLY') return false;
+      return true;
     });
     if (excluded && pool.length > 1) {
       pool = pool.filter(function (action) { return action !== excluded; });
@@ -1435,13 +1437,13 @@
     return pool;
   }
 
-  function pickOneAction(excluded, disallowWetWilly) {
-    var pool = availableActionPool(excluded, disallowWetWilly);
+  function pickOneAction(excluded, disallowWetWilly, disallowBully) {
+    var pool = availableActionPool(excluded, disallowWetWilly, disallowBully);
     return pickWeightedAction(pool);
   }
 
-  function pickDistinctActions(count, prevAction, disallowWetWilly) {
-    var pool = availableActionPool(prevAction, disallowWetWilly);
+  function pickDistinctActions(count, prevAction, disallowWetWilly, disallowBully) {
+    var pool = availableActionPool(prevAction, disallowWetWilly, disallowBully);
 
     var picked = [];
     while (picked.length < count && pool.length) {
@@ -1456,10 +1458,12 @@
   function pickAction(prevAction, completedCommands) {
     var singleOnly = state.highScore <= 10 || completedCommands <= 5;
     var disallowWetWilly = completedCommands <= 10 || state.wetWillyCooldown > 0;
+    var disallowBully = completedCommands < 5;
 
     // Ease in new or reset players with single-action prompts only. Wet Willy
-    // stays locked through score 10 and for ten full prompts after completion.
-    if (singleOnly) return pickOneAction(prevAction, disallowWetWilly);
+    // stays locked through score 10 and for ten full prompts after completion;
+    // Bully stays locked until the current score reaches five.
+    if (singleOnly) return pickOneAction(prevAction, disallowWetWilly, disallowBully);
 
     var comboUnlocked = completedCommands >= 5;
     // Before five successful commands, sample only the regular 97% of
@@ -1469,13 +1473,13 @@
 
     // 50% single, 37% double, 10% triple, 3% long command.
     if (roll < 0.50) {
-      return pickOneAction(prevAction, disallowWetWilly);
+      return pickOneAction(prevAction, disallowWetWilly, disallowBully);
     }
     if (roll < 0.87) {
-      return pickDistinctActions(2, prevAction, disallowWetWilly);
+      return pickDistinctActions(2, prevAction, disallowWetWilly, disallowBully);
     }
     if (roll < 0.97) {
-      return pickDistinctActions(3, prevAction, disallowWetWilly);
+      return pickDistinctActions(3, prevAction, disallowWetWilly, disallowBully);
     }
     return 'COMBO';
   }
