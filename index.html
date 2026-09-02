@@ -79,7 +79,7 @@
     display: flex; align-items: center; justify-content: center;
     margin: 0 auto 18px;
     width: clamp(240px, 82vmin, 640px); max-width: 100%; min-width: 0;
-    transform: translate3d(0, 0, 0);
+    transform: translate3d(0, -8px, 0);
     transition: transform 380ms cubic-bezier(.4,0,.2,1);
     will-change: transform;
     /* Text shadows are paint outside the measured glyph box. Keeping this
@@ -242,7 +242,7 @@
   .dork-subtitle {
     position: absolute;
     left: 50%;
-    bottom: 0;
+    bottom: -5px;
     z-index: 5;
     display: block;
     transform: translateX(-50%);
@@ -254,9 +254,9 @@
     font-size: 16px;
     font-weight: 400;
     line-height: 1;
-    -webkit-text-stroke: 0.065em #000;
+    -webkit-text-stroke: 0.13em #000;
     paint-order: stroke fill;
-    filter: drop-shadow(0 0.085em 0 #000);
+    filter: drop-shadow(0 0.1275em 0 #000);
   }
   .dork-subbar { position: relative; display: flex; align-items: center; justify-content: center; gap: 28px; margin-top: 18px; }
   .dork-readout {
@@ -515,7 +515,7 @@
   }
   @keyframes coverRing {
     0% { transform: scale(1); }
-    42%, 56% { transform: scale(1.22); }
+    42% { transform: scale(1.22); }
     100% { transform: scale(1); }
   }
   @keyframes wobbleFail {
@@ -565,7 +565,7 @@
 
 <div id="bgFill"></div>
 
-<div class="version-indicator" aria-hidden="true">v112</div>
+<div class="version-indicator" aria-hidden="true">v115</div>
 
 <div id="logoTile" aria-hidden="true">
   <svg xmlns="http://www.w3.org/2000/svg">
@@ -594,7 +594,7 @@
 
 <div class="dork-app">
   <div class="dork-header" id="dorkHeader">
-    <div class="dork-title" id="dorkTitle"><span class="dork-title-word">D<span class="dork-title-head" role="img" aria-label="portrait head with glasses"><span class="head-drop" aria-hidden="true"></span><span class="head-stroke" aria-hidden="true"></span><span class="head-art" aria-hidden="true"></span></span>RK IT!</span></div>
+    <div class="dork-title" id="dorkTitle"><span class="dork-title-word">D<span class="dork-title-head" role="img" aria-label="portrait head with glasses"><span class="head-drop" aria-hidden="true"></span><span class="head-stroke" aria-hidden="true"></span><span class="head-art" aria-hidden="true"></span></span>RK IT</span></div>
     <div class="dork-subtitle" id="dorkSubtitle" role="note">I need to tell you how much I love you!</div>
   </div>
 
@@ -1073,8 +1073,9 @@
     return 'COMBO';
   }
 
-  // Keeps "DORK IT" centered on one line: reset to the CSS-driven size,
-  // then shrink in px steps only if it would actually overflow/wrap.
+  // Keeps "DORK IT" centered on one line and fitted to the header width.
+  // Fitting in both directions preserves the title's previous visual width
+  // after removing its exclamation mark.
   var titleFitPending = false;
   var scrollResetPending = false;
   var layoutMorphActive = false;
@@ -1083,7 +1084,7 @@
     'I missed you!',
     '(Dorky Noises)',
     'Hmph!',
-    'Hey!',
+    'HEY!',
     "I don't want to stop hanging out with you!",
     'I have a lot of love in my heart for you!',
     'Honk Shoo Mimimi'
@@ -1116,11 +1117,9 @@
     titleEl.style.fontSize = '';
     var maxWidth = container.clientWidth;
     var naturalWidth = titleEl.scrollWidth;
-    if (naturalWidth > maxWidth) {
-      var current = parseFloat(getComputedStyle(titleEl).fontSize);
-      if (current && current > 14) {
-        titleEl.style.fontSize = Math.max(14, current * maxWidth / naturalWidth - 0.5) + 'px';
-      }
+    var current = parseFloat(getComputedStyle(titleEl).fontSize);
+    if (naturalWidth > 0 && current && current > 14) {
+      titleEl.style.fontSize = Math.max(14, current * maxWidth / naturalWidth - 0.5) + 'px';
     }
     // Flush only the completed size; no intermediate size can reach paint.
     void titleEl.offsetWidth;
@@ -1413,19 +1412,19 @@
       ], { duration: 190, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' });
       grow.finished.then(function () {
         coverOnce();
-        requestAnimationFrame(function () {
-          var shrink = el.confirmBtn.animate([
-            { transform: 'scale(1.22)' },
-            { transform: 'scale(1)' }
-          ], { duration: 260, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'forwards' });
-          grow.cancel();
-          shrink.finished.then(function () {
-            shrink.cancel();
-            doneOnce();
-          }).catch(function () {
-            shrink.cancel();
-            doneOnce();
-          });
+        // Begin shrinking in the same microtask as the grow completion.
+        // There is no enlarged hold frame between the two phases.
+        var shrink = el.confirmBtn.animate([
+          { transform: 'scale(1.22)' },
+          { transform: 'scale(1)' }
+        ], { duration: 260, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'forwards' });
+        grow.cancel();
+        shrink.finished.then(function () {
+          shrink.cancel();
+          doneOnce();
+        }).catch(function () {
+          shrink.cancel();
+          doneOnce();
         });
       }).catch(function () {
         coverOnce();
@@ -1434,11 +1433,11 @@
       return;
     }
 
-    // Fallback for older browsers: the CSS keyframes include a covered
-    // hold, with the reset scheduled inside that hold.
+    // Fallback for older browsers: a single peak keyframe grows and then
+    // immediately shrinks, with no enlarged plateau.
     el.confirmBtn.classList.add('success');
-    setTimeout(coverOnce, 200);
-    setTimeout(doneOnce, 470);
+    setTimeout(coverOnce, 190);
+    setTimeout(doneOnce, 450);
   }
 
   function pulseReadout(target, animationKey) {
