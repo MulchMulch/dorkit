@@ -361,7 +361,10 @@
   .dork-subbar { position: relative; display: flex; align-items: center; justify-content: center; gap: 28px; margin-top: 18px; }
   .dork-readout {
     font-family: 'Fredoka', sans-serif; font-weight: 700;
-    background: #FFF8ED; border: var(--dork-score-border-w) solid #3B230F; box-shadow: 5px 5px 0 rgba(59,35,15,0.3);
+    position: relative;
+    background: transparent;
+    border: var(--dork-score-border-w) solid transparent;
+    box-shadow: none;
     padding: 13px 24px; border-radius: 22px; font-size: clamp(22px, 5.4vw, 32px);
     transform: scale(0.62);
     transition: transform 380ms cubic-bezier(.4,0,.2,1);
@@ -384,11 +387,36 @@
     text-align: center;
     font-variant-numeric: tabular-nums;
   }
+  .dork-readout-content {
+    position: relative;
+    z-index: 1;
+  }
+  .dork-score-handdrawn {
+    position: absolute;
+    inset: calc(var(--dork-score-border-w) * -0.5);
+    width: calc(100% + var(--dork-score-border-w));
+    height: calc(100% + var(--dork-score-border-w));
+    overflow: visible;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .dork-score-handdrawn .sketch-shadow {
+    fill: rgba(59,35,15,0.3);
+    stroke: none;
+  }
+  .dork-score-handdrawn .sketch-face {
+    fill: #FFF8ED;
+    stroke: #3B230F;
+    stroke-width: var(--dork-score-border-w);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+  }
   .dork-readout.big {
     /* Transform-only growth gives the original small-to-large appearance
        without changing layout dimensions or re-centering the game. */
     padding: 13px 24px; border-radius: 22px; font-size: clamp(22px, 5.4vw, 32px);
-    transform: scale(1); box-shadow: 5px 5px 0 rgba(59,35,15,0.3);
+    transform: scale(1); box-shadow: none;
   }
   .dork-readout.pulse-score {
     animation: scorePulse 0.32s ease-in-out;
@@ -491,10 +519,10 @@
     width: 88%;
     height: 88%;
     border-radius: 9999px;
-    background: #FFF8ED;
+    background: transparent;
     border-style: solid;
     border-width: var(--dork-border-w);
-    border-color: #3B230F;
+    border-color: transparent;
     color: #3B230F;
     font-family: 'Fredoka', sans-serif; font-weight: 700;
     font-size: clamp(22px, 6vmin, 44px);
@@ -502,6 +530,8 @@
     line-height: 1.25;
     padding: 0 6%;
     cursor: default;
+    -webkit-appearance: none;
+    appearance: none;
     transition: transform 90ms ease, border-color 150ms ease, box-shadow 150ms ease;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
@@ -519,10 +549,30 @@
   }
   .dork-confirm.combo.success { animation: coverRing 0.8s cubic-bezier(.2,.8,.2,1); }
   .dork-confirm-label {
+    position: relative;
+    z-index: 1;
     display: inline-block;
     max-width: 100%;
     transform-origin: center center;
     will-change: transform;
+  }
+  .dork-button-handdrawn {
+    position: absolute;
+    inset: calc(var(--dork-border-w) * -0.5);
+    width: calc(100% + var(--dork-border-w));
+    height: calc(100% + var(--dork-border-w));
+    overflow: visible;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .dork-button-handdrawn path {
+    fill: #FFF8ED;
+    stroke: #3B230F;
+    stroke-width: var(--dork-border-w);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+    shape-rendering: geometricPrecision;
   }
   .dork-confirm.playing .dork-confirm-label {
     /* 2.5s each way gives the instruction text a slow 5s round trip. */
@@ -715,7 +765,7 @@
 
 <div id="bgFill"></div>
 
-<div class="version-indicator" aria-hidden="true">v149</div>
+<div class="version-indicator" aria-hidden="true">v150</div>
 
 <div id="logoTile" aria-hidden="true">
   <svg xmlns="http://www.w3.org/2000/svg">
@@ -771,7 +821,7 @@
             </g>
           </svg>
         </div>
-        <button class="dork-confirm idle-bounce" id="confirmBtn"><span class="dork-confirm-label" id="confirmLabel">READY?</span></button>
+        <button class="dork-confirm idle-bounce" id="confirmBtn"><svg class="dork-button-handdrawn" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M 50 1.4 C 58.2 0.9 66.8 3.7 74.7 7.7 C 81.8 12.1 88.5 18.2 92.3 25.8 C 96.9 32.7 98.4 41.4 98.8 50 C 99.1 58.6 96.4 67.3 92.6 74.3 C 88 82 81.7 87.8 74.3 92.6 C 67.2 96.4 58.7 99.2 50 98.7 C 41.3 99.2 32.7 96.1 25.7 92.6 C 18 88.3 12.2 81.6 7.6 74.4 C 3.5 67.3 0.9 58.7 1.4 50 C 0.8 41.3 3.6 32.8 7.7 25.6 C 11.8 18.1 18.3 12.2 25.6 7.6 C 32.9 3.2 41.6 1.1 50 1.4 Z" vector-effect="non-scaling-stroke"></path></svg><span class="dork-confirm-label" id="confirmLabel">READY?</span></button>
       </div>
     </div>
 
@@ -791,8 +841,8 @@
   </div>
 
   <div class="dork-subbar" id="scoreBar">
-    <div class="dork-readout" id="scoreBox">SCORE <b id="scoreReadout">00</b></div>
-    <div class="dork-readout" id="highScoreBox">HIGH <b id="highScoreReadout">00</b></div>
+    <div class="dork-readout" id="scoreBox"><svg class="dork-score-handdrawn" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="sketch-shadow" transform="translate(2 6)" d="M 50 1.8 C 64 0.8 77 2.4 88 1.5 C 94 1.1 98.5 10 98 28 C 99 43 97.8 57 98.6 72 C 98.8 89 94 98.7 88 98.2 C 75 99.4 62 97.5 50 98.5 C 36 99.3 24 97.9 12 98.6 C 5.3 98.8 1.4 89 2 72 C 0.9 58 2.2 42 1.5 28 C 1.2 10 5.8 1 12 1.8 C 24 0.9 36 2.5 50 1.8 Z"></path><path class="sketch-face" d="M 50 1.8 C 64 0.8 77 2.4 88 1.5 C 94 1.1 98.5 10 98 28 C 99 43 97.8 57 98.6 72 C 98.8 89 94 98.7 88 98.2 C 75 99.4 62 97.5 50 98.5 C 36 99.3 24 97.9 12 98.6 C 5.3 98.8 1.4 89 2 72 C 0.9 58 2.2 42 1.5 28 C 1.2 10 5.8 1 12 1.8 C 24 0.9 36 2.5 50 1.8 Z" vector-effect="non-scaling-stroke"></path></svg><span class="dork-readout-content">SCORE <b id="scoreReadout">00</b></span></div>
+    <div class="dork-readout" id="highScoreBox"><svg class="dork-score-handdrawn" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="sketch-shadow" transform="translate(2 6)" d="M 50 1.8 C 64 0.8 77 2.4 88 1.5 C 94 1.1 98.5 10 98 28 C 99 43 97.8 57 98.6 72 C 98.8 89 94 98.7 88 98.2 C 75 99.4 62 97.5 50 98.5 C 36 99.3 24 97.9 12 98.6 C 5.3 98.8 1.4 89 2 72 C 0.9 58 2.2 42 1.5 28 C 1.2 10 5.8 1 12 1.8 C 24 0.9 36 2.5 50 1.8 Z"></path><path class="sketch-face" d="M 50 1.8 C 64 0.8 77 2.4 88 1.5 C 94 1.1 98.5 10 98 28 C 99 43 97.8 57 98.6 72 C 98.8 89 94 98.7 88 98.2 C 75 99.4 62 97.5 50 98.5 C 36 99.3 24 97.9 12 98.6 C 5.3 98.8 1.4 89 2 72 C 0.9 58 2.2 42 1.5 28 C 1.2 10 5.8 1 12 1.8 C 24 0.9 36 2.5 50 1.8 Z" vector-effect="non-scaling-stroke"></path></svg><span class="dork-readout-content">HIGH <b id="highScoreReadout">00</b></span></div>
   </div>
 </div>
 
@@ -2094,6 +2144,7 @@
      a genuinely smooth circumference at the end of the morph. */
   var HAND_BOX_PATH = 'M 50 1.4 C 63 1.1 78 1.8 94 1.3 C 96.8 1.1 98.5 2.6 98.4 5.2 C 99.1 22 98.1 39 98.8 50 C 99.2 65 98.1 83 98.7 94.8 C 98.9 97.5 97.4 98.6 94.8 98.3 C 79 99.1 64 97.9 50 98.5 C 36 99.1 21 98 5.2 98.7 C 2.5 98.8 1.6 97.3 1.8 94.7 C 0.9 78 2.1 61 1.3 50 C 0.7 35 2.3 13 1.5 5.2 C 1.3 2.4 2.7 1.4 5.1 1.7 C 20 0.9 35 2 50 1.4 Z';
   var CIRCLE_PATH = 'M 50 1 C 58.601 1 67.051 3.264 74.5 7.565 C 81.949 11.866 88.134 18.051 92.435 25.5 C 96.736 32.949 99 41.399 99 50 C 99 58.601 96.736 67.051 92.435 74.5 C 88.134 81.949 81.949 88.134 74.5 92.435 C 67.051 96.736 58.601 99 50 99 C 41.399 99 32.949 96.736 25.5 92.435 C 18.051 88.134 11.866 81.949 7.565 74.5 C 3.264 67.051 1 58.601 1 50 C 1 41.399 3.264 32.949 7.565 25.5 C 11.866 18.051 18.051 11.866 25.5 7.565 C 32.949 3.264 41.399 1 50 1 Z';
+  var GAME_CIRCLE_PATH = 'M 50 1.4 C 58.2 0.9 66.8 3.7 74.7 7.7 C 81.8 12.1 88.5 18.2 92.3 25.8 C 96.9 32.7 98.4 41.4 98.8 50 C 99.1 58.6 96.4 67.3 92.6 74.3 C 88 82 81.7 87.8 74.3 92.6 C 67.2 96.4 58.7 99.2 50 98.7 C 41.3 99.2 32.7 96.1 25.7 92.6 C 18 88.3 12.2 81.6 7.6 74.4 C 3.5 67.3 0.9 58.7 1.4 50 C 0.8 41.3 3.6 32.8 7.7 25.6 C 11.8 18.1 18.3 12.2 25.6 7.6 C 32.9 3.2 41.6 1.1 50 1.4 Z';
 
   document.querySelectorAll('.dork-handdrawn-border path').forEach(function (path) {
     path.setAttribute('d', HAND_BOX_PATH);
@@ -2296,7 +2347,7 @@
     shell.style.borderBottomWidth = (trueBorderPx / sy) + 'px';
     var shellBorder = overlayEl.querySelector('.dork-handdrawn-border').cloneNode(true);
     var shellPath = shellBorder.querySelector('path');
-    shellPath.setAttribute('d', CIRCLE_PATH);
+    shellPath.setAttribute('d', GAME_CIRCLE_PATH);
     shell.appendChild(shellBorder);
     tracker.appendChild(shell);
     document.body.appendChild(tracker);
@@ -2333,7 +2384,7 @@
       shell.style.transition =
         'transform ' + MORPH_MS + 'ms cubic-bezier(.4,0,.2,1)';
       shell.style.transform = 'translate(0px, 0px) scale(1, 1)';
-      morphPath(shellPath, CIRCLE_PATH, HAND_BOX_PATH, MORPH_MS);
+      morphPath(shellPath, GAME_CIRCLE_PATH, HAND_BOX_PATH, MORPH_MS);
 
       setTimeout(function () {
         // Only now—after the full morph—fade the real box in over the
