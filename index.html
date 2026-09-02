@@ -242,6 +242,9 @@
     height: 0.88em;
     margin: 0 0.025em;
     top: 0.025em;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
   .dork-title-head > span {
     position: absolute;
@@ -267,6 +270,34 @@
     transform-origin: center;
   }
   .dork-title-head .head-art { z-index: 2; }
+  .dork-title-head::before,
+  .dork-title-head::after {
+    content: "";
+    position: absolute;
+    top: 59%;
+    z-index: 3;
+    width: 12%;
+    height: 11%;
+    border-radius: 50%;
+    background: radial-gradient(circle,
+      rgba(255,127,162,0.86) 0%,
+      rgba(255,127,162,0.68) 38%,
+      rgba(255,127,162,0.28) 64%,
+      rgba(255,127,162,0) 82%);
+    opacity: 0;
+    pointer-events: none;
+  }
+  .dork-title-head::before { left: 21%; }
+  .dork-title-head::after { right: 21%; }
+  .dork-title-head.blushing::before,
+  .dork-title-head.blushing::after {
+    /* 200ms fade in + 2s fully visible + 300ms fade out. */
+    animation: titleHeadBlush 2.5s linear forwards;
+  }
+  .dork-header.playing .dork-title-head {
+    pointer-events: none;
+    cursor: default;
+  }
   .dork-subtitle {
     position: absolute;
     left: 50%;
@@ -439,13 +470,13 @@
   .dork-confirm.playing { cursor: pointer; }
   .dork-confirm.idle-bounce { animation: bounceIdle 1.8s ease-in-out infinite; }
   .dork-confirm.pressed { transform: none; }
-  .dork-confirm.success { animation: coverRing 0.66s cubic-bezier(.2,.8,.2,1); }
+  .dork-confirm.success { animation: coverRing 0.8s cubic-bezier(.2,.8,.2,1); }
   .dork-confirm.long-label { font-size: clamp(20px, 5.4vmin, 40px); overflow-wrap: anywhere; word-break: normal; }
   .dork-confirm.combo {
     box-shadow: 0 0 16px 7px rgba(255,215,0,0.52);
     animation: none;
   }
-  .dork-confirm.combo.success { animation: coverRing 0.66s cubic-bezier(.2,.8,.2,1); }
+  .dork-confirm.combo.success { animation: coverRing 0.8s cubic-bezier(.2,.8,.2,1); }
   .dork-confirm-label {
     display: inline-block;
     max-width: 100%;
@@ -560,9 +591,15 @@
     from { transform: rotate(-7deg); }
     to { transform: rotate(7deg); }
   }
+  @keyframes titleHeadBlush {
+    0%   { opacity: 0; }
+    8%   { opacity: 0.86; }
+    88%  { opacity: 0.86; }
+    100% { opacity: 0; }
+  }
   @keyframes coverRing {
     0% { transform: scale(1); }
-    42% { transform: scale(1.22); }
+    52.5% { transform: scale(1.22); }
     100% { transform: scale(1); }
   }
   @keyframes wobbleFail {
@@ -606,7 +643,7 @@
 
 <div id="bgFill"></div>
 
-<div class="version-indicator" aria-hidden="true">v129</div>
+<div class="version-indicator" aria-hidden="true">v131</div>
 
 <div id="logoTile" aria-hidden="true">
   <svg xmlns="http://www.w3.org/2000/svg">
@@ -646,7 +683,7 @@
 
 <div class="dork-app">
   <div class="dork-header" id="dorkHeader">
-    <div class="dork-title" id="dorkTitle"><span class="dork-title-word">D<span class="dork-title-head" role="img" aria-label="portrait head with glasses"><span class="head-drop" aria-hidden="true"></span><span class="head-stroke" aria-hidden="true"></span><span class="head-art" aria-hidden="true"></span></span>RK IT</span></div>
+    <div class="dork-title" id="dorkTitle"><span class="dork-title-word">D<span class="dork-title-head" id="dorkTitleHead" role="img" aria-label="portrait head with glasses"><span class="head-drop" aria-hidden="true"></span><span class="head-stroke" aria-hidden="true"></span><span class="head-art" aria-hidden="true"></span></span>RK IT</span></div>
     <div class="dork-subtitle" id="dorkSubtitle" role="note">I need to tell you how much I love you!</div>
   </div>
 
@@ -743,6 +780,7 @@
     gameoverSub: document.getElementById('gameoverSub'),
     dorkHeader: document.getElementById('dorkHeader'),
     dorkTitle: document.getElementById('dorkTitle'),
+    dorkTitleHead: document.getElementById('dorkTitleHead'),
     dorkSubtitle: document.getElementById('dorkSubtitle'),
     logoTile: document.getElementById('logoTile'),
     logoPattern: document.getElementById('logoPattern'),
@@ -1641,10 +1679,13 @@
     var count = Array.isArray(action) ? action.length : (action === 'COMBO' ? 4 : 1);
     // Every action is 0.5s shorter than v82: single 2.5s, double 3s,
     // triple 3.5s, and the long COMBO 5.5s. Any round containing WET
-    // WILLY receives one additional second before normal speed scaling.
+    // WILLY receives one additional second; any containing BULLY receives
+    // three additional seconds. Both bonuses apply before speed scaling.
     var baseDuration = action === 'COMBO' ? 5500 : (count === 3 ? 3500 : (count === 2 ? 3000 : 2500));
     var containsWetWilly = action === 'WILLY' || (Array.isArray(action) && action.indexOf('WILLY') !== -1);
     if (containsWetWilly) baseDuration += 1000;
+    var containsBully = action === 'BULLY' || (Array.isArray(action) && action.indexOf('BULLY') !== -1);
+    if (containsBully) baseDuration += 3000;
     state.duration = baseDuration * state.speedMultiplier;
 
     var sayText;
@@ -1705,7 +1746,7 @@
   }
 
   function animateButtonOverRing(onCovered, onDone) {
-    var growDuration = 280;
+    var growDuration = 420;
     var shrinkDuration = 380;
     var covered = false;
     var done = false;
@@ -1837,6 +1878,7 @@
 
   function startGame() {
     clearBackgroundGlows();
+    clearTitleBlush();
     state.score = 0;
     state.speedMultiplier = 1;
     state.beatHighScore = false;
@@ -2118,6 +2160,34 @@
 
   // ---------- controls ----------
   document.addEventListener('pointerdown', glowBackgroundIcon, { passive: true });
+
+  var titleBlushTimeoutId = null;
+  function clearTitleBlush() {
+    if (titleBlushTimeoutId !== null) {
+      clearTimeout(titleBlushTimeoutId);
+      titleBlushTimeoutId = null;
+    }
+    el.dorkTitleHead.classList.remove('blushing');
+  }
+
+  function showTitleBlush() {
+    clearTitleBlush();
+    // Force the pseudo-element animation back to its first frame so every
+    // menu tap—including rapid repeats—gets the complete blush response.
+    void el.dorkTitleHead.offsetWidth;
+    el.dorkTitleHead.classList.add('blushing');
+    titleBlushTimeoutId = setTimeout(function () {
+      el.dorkTitleHead.classList.remove('blushing');
+      titleBlushTimeoutId = null;
+    }, 2520);
+  }
+
+  el.dorkTitleHead.addEventListener('click', function (e) {
+    if (state.gameState === 'playing' || state.morphingOut || layoutMorphActive) return;
+    e.preventDefault();
+    e.stopPropagation();
+    showTitleBlush();
+  });
 
   function fadeToRandomSubtitle(onSubtitleSwapped, allowDuringMorph) {
     if (state.gameState === 'playing' || state.morphingOut ||
