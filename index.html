@@ -606,7 +606,7 @@
 
 <div id="bgFill"></div>
 
-<div class="version-indicator" aria-hidden="true">v126</div>
+<div class="version-indicator" aria-hidden="true">v128</div>
 
 <div id="logoTile" aria-hidden="true">
   <svg xmlns="http://www.w3.org/2000/svg">
@@ -1222,6 +1222,7 @@
   var logoMaskPending = false;
   var layoutMorphActive = false;
   var subtitleChanging = false;
+  var subtitleSwapCallbacks = [];
   var titlePositionAnimation = null;
   var SUBTITLE_OPTIONS = [
     'I need to tell you how much I love you!',
@@ -1257,7 +1258,9 @@
   var LOGO_ICON_BOTTOM_IN_ROW = 55;
   var LOGO_ICON_HEIGHT = LOGO_ICON_BOTTOM_IN_ROW - LOGO_ICON_TOP_IN_ROW;
   var LOGO_COLUMN_PITCH = 225;
-  var LOGO_GLOW_DURATION = 1800;
+  // Preserve the existing fade lengths while doubling the fully-white hold
+  // from one second to two seconds.
+  var LOGO_GLOW_DURATION = 2800;
   var LOGO_RIGHT_ROW_ICONS = [
     { path: 'tileIconCinnamoroll', centerX: 37.5, hitHalfWidth: 33, scaled: true },
     { path: 'tileIconMiffy', centerX: 112.5, hitHalfWidth: 13, scaled: false },
@@ -1336,11 +1339,11 @@
     group.appendChild(use);
 
     var glow = use.animate([
-      { offset: 0, opacity: 0 },
-      { offset: 0.2, opacity: 1 },
-      { offset: 0.756, opacity: 1 },
+      { offset: 0, opacity: 0, easing: 'ease-in-out' },
+      { offset: 0.129, opacity: 1, easing: 'linear' },
+      { offset: 0.843, opacity: 1, easing: 'ease-in-out' },
       { offset: 1, opacity: 0 }
-    ], { duration: LOGO_GLOW_DURATION, easing: 'ease-in-out', fill: 'forwards' });
+    ], { duration: LOGO_GLOW_DURATION, easing: 'linear', fill: 'forwards' });
     glow.onfinish = function () { use.remove(); };
     glow.oncancel = function () { use.remove(); };
   }
@@ -1375,14 +1378,14 @@
     el.logoBottomMask.style.height = Math.max(0, bottomMaskHeight) + 'px';
   }
 
-  function fitTitle(animatePosition) {
+  function fitTitle(animatePosition, allowDuringMorph) {
     var titleEl = el.dorkTitle;
     var container = el.dorkHeader;
     if (!titleEl || !container) return;
     // iOS Safari emits viewport resize events while its browser chrome
     // settles after a tap. Never let title measurement interrupt the live
     // countdown; service the request during the spoken lead-in instead.
-    if (state.timerRunning || layoutMorphActive) {
+    if (state.timerRunning || (layoutMorphActive && allowDuringMorph !== true)) {
       titleFitPending = true;
       return;
     }
@@ -1408,7 +1411,8 @@
       // font size. Exceptionally long choices shrink only enough to remain
       // centered on one line inside the header.
       var fittedTitleSize = parseFloat(getComputedStyle(titleEl).fontSize) || 64;
-      var subtitleSize = fittedTitleSize * 0.25;
+      var fullSubtitleSize = fittedTitleSize * 0.25;
+      var subtitleSize = fullSubtitleSize;
       el.dorkSubtitle.style.width = 'max-content';
       el.dorkSubtitle.style.fontSize = subtitleSize + 'px';
       var subtitleMaxWidth = container.clientWidth * 0.96;
@@ -1417,11 +1421,10 @@
         subtitleSize = Math.max(9, subtitleSize * subtitleMaxWidth / subtitleNaturalWidth);
         el.dorkSubtitle.style.fontSize = subtitleSize + 'px';
       }
-      // Preserve the original header bottom edge by lifting the main title
-      // just enough to make room for the centered subtitle beneath it.
-      // Add a small amount of breathing room above the subtitle without
-      // pushing the subtitle itself closer to the menu panel below.
-      titleEl.style.transform = 'translateY(-' + (Math.max(10, subtitleSize * 0.9) + 3) + 'px)';
+      // Base the title lift on the subtitle's full quarter-size value—not
+      // its fitted-down value—so long subtitles cannot move DORK IT up and
+      // down. The extra 2px also leaves a slightly larger fixed gap.
+      titleEl.style.transform = 'translateY(-' + (Math.max(10, fullSubtitleSize * 0.9) + 5) + 'px)';
     }
     var finalTitleTransform = getComputedStyle(titleEl).transform;
     titleEl.style.transition = prevTransition;
@@ -2108,11 +2111,27 @@
   // ---------- controls ----------
   document.addEventListener('pointerdown', glowBackgroundIcon, { passive: true });
 
-  el.dorkSubtitle.addEventListener('click', function (e) {
-    if (state.gameState === 'playing' || state.morphingOut || layoutMorphActive || subtitleChanging) return;
-    e.preventDefault();
-    e.stopPropagation();
+  function fadeToRandomSubtitle(onSubtitleSwapped, allowDuringMorph) {
+    if (state.gameState === 'playing' || state.morphingOut ||
+        (layoutMorphActive && allowDuringMorph !== true)) return false;
+    if (typeof onSubtitleSwapped === 'function' && subtitleSwapCallbacks.indexOf(onSubtitleSwapped) === -1) {
+      subtitleSwapCallbacks.push(onSubtitleSwapped);
+    }
+    // If a menu tap already started the fade, GO AGAIN can join that same
+    // transition instead of interrupting it or making the button feel dead.
+    if (subtitleChanging) return true;
     subtitleChanging = true;
+    var swapHandled = false;
+
+    function finishSwap() {
+      if (swapHandled) return;
+      swapHandled = true;
+      chooseRandomSubtitle(true);
+      fitTitle(true, allowDuringMorph === true);
+      var callbacks = subtitleSwapCallbacks.slice();
+      subtitleSwapCallbacks.length = 0;
+      callbacks.forEach(function (callback) { callback(); });
+    }
 
     var fadeOut = el.dorkSubtitle.animate([
       { opacity: 1 },
@@ -2120,8 +2139,7 @@
     ], { duration: 180, easing: 'ease-in', fill: 'forwards' });
 
     fadeOut.finished.then(function () {
-      chooseRandomSubtitle(true);
-      fitTitle(true);
+      finishSwap();
       fadeOut.cancel();
       var fadeIn = el.dorkSubtitle.animate([
         { opacity: 0 },
@@ -2132,11 +2150,21 @@
         el.dorkSubtitle.style.opacity = '1';
         subtitleChanging = false;
       }).catch(function () {
+        el.dorkSubtitle.style.opacity = '1';
         subtitleChanging = false;
       });
     }).catch(function () {
+      finishSwap();
+      el.dorkSubtitle.style.opacity = '1';
       subtitleChanging = false;
     });
+    return true;
+  }
+
+  el.dorkSubtitle.addEventListener('click', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    fadeToRandomSubtitle();
   });
 
   var highScoreTapTimes = [];
@@ -2167,10 +2195,23 @@
     unlockAudio();
     morphOverlayIntoButton(el.idleOverlay, startGame);
   });
+
+  function beginPlayAgainMorph() {
+    if (layoutMorphActive || state.morphingOut || state.gameState === 'playing') return false;
+    morphOverlayIntoButton(el.gameoverOverlay, startGame);
+    return true;
+  }
+
   el.playAgainBtn.addEventListener('click', function (e) {
     e.preventDefault();
     unlockAudio();
-    morphOverlayIntoButton(el.gameoverOverlay, startGame);
+    if (!beginPlayAgainMorph()) return;
+    // Begin the fade shortly after the replay morph starts. Its 180ms
+    // fade-out puts the actual text swap about 300ms into the transition,
+    // near the middle rather than at the initial press.
+    setTimeout(function () {
+      fadeToRandomSubtitle(null, true);
+    }, 120);
   });
   // Tap/click ANYWHERE on the screen completes the action — not just the
   // circle — so it's easy to keep up during fast, frantic play.
