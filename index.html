@@ -59,6 +59,16 @@
     contain: strict;
   }
   #logoTile svg { display: block; width: 100%; height: 100%; }
+  .logo-scroll-layer {
+    will-change: transform;
+    transform-origin: 0 0;
+  }
+  .logo-scroll-right,
+  .logo-scroll-left { animation: logoRowsRight 30s linear infinite; }
+  @keyframes logoRowsRight {
+    from { transform: translateX(-225px); }
+    to { transform: translateX(0); }
+  }
   /* These solid strips cover only artwork that would actually be clipped at
      a viewport edge. Empty padding inside a 75px pattern row is left alone. */
   .logo-row-mask {
@@ -600,7 +610,7 @@
 
 <div id="bgFill"></div>
 
-<div class="version-indicator" aria-hidden="true">v121</div>
+<div class="version-indicator" aria-hidden="true">v124</div>
 
 <div id="logoTile" aria-hidden="true">
   <svg xmlns="http://www.w3.org/2000/svg">
@@ -610,12 +620,15 @@
         <path id="tileIconSnoopy" d="M 43.53,20.10 L 41.64,20.21 L 40.59,20.52 L 39.86,21.05 L 39.23,20.00 L 38.71,20.00 L 38.18,20.73 L 38.50,20.42 L 38.81,20.42 L 39.44,21.57 L 37.24,23.25 L 35.98,23.67 L 32.84,23.67 L 31.16,24.09 L 30.22,24.61 L 28.12,26.81 L 27.18,28.80 L 26.97,30.16 L 26.34,30.27 L 25.50,30.79 L 24.56,31.95 L 24.56,33.31 L 25.08,33.94 L 26.44,33.94 L 27.39,33.41 L 28.54,34.67 L 29.80,35.40 L 32.52,36.03 L 33.88,36.03 L 37.24,36.98 L 37.76,37.40 L 38.18,38.55 L 37.55,38.97 L 37.55,39.28 L 38.08,39.70 L 37.55,40.96 L 36.19,42.63 L 35.56,44.10 L 35.25,45.88 L 35.35,47.25 L 35.77,48.71 L 36.40,49.34 L 37.76,49.87 L 37.87,50.60 L 37.45,51.02 L 35.46,51.02 L 34.93,51.23 L 33.68,51.12 L 33.15,51.54 L 32.10,51.75 L 31.37,52.38 L 30.95,53.22 L 30.95,53.85 L 31.47,54.48 L 36.61,55.00 L 39.33,54.79 L 42.27,54.90 L 43.21,54.48 L 45.10,54.27 L 45.41,53.95 L 45.31,53.11 L 44.47,52.17 L 42.16,51.75 L 41.95,51.44 L 42.06,50.60 L 41.74,49.87 L 42.48,49.34 L 43.63,50.18 L 45.20,50.81 L 46.88,50.60 L 48.35,49.87 L 47.61,49.87 L 46.77,49.13 L 45.83,48.82 L 43.32,48.40 L 43.11,48.19 L 43.32,47.25 L 43.21,45.99 L 42.58,44.21 L 41.43,42.22 L 41.43,41.80 L 40.91,40.75 L 40.80,38.86 L 41.01,38.44 L 40.80,38.13 L 41.43,36.56 L 42.90,35.40 L 44.57,36.66 L 45.83,36.66 L 47.61,35.93 L 49.18,34.25 L 49.92,32.78 L 50.34,31.32 L 50.44,28.70 L 50.13,27.96 L 50.13,27.13 L 49.71,26.18 L 49.81,25.55 L 49.08,23.98 L 47.30,22.10 L 46.25,21.68 L 45.52,20.94 Z"></path>
       <pattern id="logoPattern" patternUnits="userSpaceOnUse" x="0" y="0" width="225" height="150">
         <g fill="#FFFFFF" fill-opacity="0.25">
-          <!-- Row 1: normal alignment -->
+          <!-- Rows 1, 3, 5... drift right. -->
           <use href="#tileIconCinnamoroll" x="0" y="0" transform="translate(37.5 37.5) scale(1.8) translate(-37.5 -37.5)"></use>
           <use href="#tileIconMiffy" x="75" y="0"></use>
           <use href="#tileIconSnoopy" x="150" y="0"></use>
-
-          <!-- Row 2: shifted by half the 75px icon spacing -->
+        </g>
+      </pattern>
+      <pattern id="logoPatternLeft" patternUnits="userSpaceOnUse" x="0" y="0" width="225" height="150">
+        <g fill="#FFFFFF" fill-opacity="0.25">
+          <!-- Rows 2, 4, 6... stay half-offset and also drift right. -->
           <use href="#tileIconMiffy" x="-37.5" y="75"></use>
           <use href="#tileIconSnoopy" x="37.5" y="75"></use>
           <use href="#tileIconCinnamoroll" x="112.5" y="75" transform="translate(150 112.5) scale(1.8) translate(-150 -112.5)"></use>
@@ -623,7 +636,12 @@
         </g>
       </pattern>
     </defs>
-    <rect width="100%" height="100%" fill="url(#logoPattern)"></rect>
+    <g class="logo-scroll-layer logo-scroll-right">
+      <rect x="-50%" width="200%" height="100%" fill="url(#logoPattern)"></rect>
+    </g>
+    <g class="logo-scroll-layer logo-scroll-left">
+      <rect x="-50%" width="200%" height="100%" fill="url(#logoPatternLeft)"></rect>
+    </g>
   </svg>
 </div>
 
@@ -731,6 +749,7 @@
     dorkSubtitle: document.getElementById('dorkSubtitle'),
     logoTile: document.getElementById('logoTile'),
     logoPattern: document.getElementById('logoPattern'),
+    logoPatternLeft: document.getElementById('logoPatternLeft'),
     logoTopMask: document.getElementById('logoTopMask'),
     logoBottomMask: document.getElementById('logoBottomMask')
   };
@@ -1151,6 +1170,7 @@
   }
 
   var LOGO_ROW_PITCH = 75;
+  var LOGO_PATTERN_HEIGHT = 150;
   // Miffy and Snoopy occupy y=20..55 in every 75px row. The enlarged
   // Cinnamoroll stays inside those bounds, so these are the true artwork
   // edges rather than the much looser pattern-cell edges.
@@ -1162,7 +1182,7 @@
   }
 
   function updateLogoRowMasks() {
-    if (!el.logoTile || !el.logoPattern || !el.logoTopMask || !el.logoBottomMask) return;
+    if (!el.logoTile || !el.logoPattern || !el.logoPatternLeft || !el.logoTopMask || !el.logoBottomMask) return;
     // As with title fitting, postpone viewport reads while the iPhone timer
     // is live so browser-chrome resize events cannot disturb its animation.
     if (state.timerRunning || layoutMorphActive) {
@@ -1173,8 +1193,9 @@
     var tileTop = el.logoTile.getBoundingClientRect().top;
     // Re-anchor the repeating pattern so the first painted icon pixel—not
     // the row's empty padding—lands exactly at the top of the viewport.
-    var patternY = positiveModulo(-LOGO_ICON_TOP_IN_ROW - tileTop, LOGO_ROW_PITCH);
+    var patternY = positiveModulo(-LOGO_ICON_TOP_IN_ROW - tileTop, LOGO_PATTERN_HEIGHT);
     el.logoPattern.setAttribute('y', String(patternY));
+    el.logoPatternLeft.setAttribute('y', String(patternY));
     el.logoTopMask.style.height = '0px';
 
     // Icon tops now occur at 0, 75, 150... A bottom row is incomplete only
