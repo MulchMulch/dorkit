@@ -288,7 +288,7 @@
     pointer-events: none;
   }
   .dork-title-head::before { left: 21%; }
-  .dork-title-head::after { right: 21%; }
+  .dork-title-head::after { right: calc(21% + 5px); }
   .dork-title-head.blushing::before,
   .dork-title-head.blushing::after {
     /* 200ms fade in + 2s fully visible + 300ms fade out. */
@@ -643,7 +643,7 @@
 
 <div id="bgFill"></div>
 
-<div class="version-indicator" aria-hidden="true">v135</div>
+<div class="version-indicator" aria-hidden="true">v136</div>
 
 <div id="logoTile" aria-hidden="true">
   <svg xmlns="http://www.w3.org/2000/svg">
@@ -966,6 +966,10 @@
     setTimeout(function () { beep(140, 0.4, 'sawtooth', 0.18); }, 90);
   }
   var cachedVoice = null;
+  // Web Speech does not expose an utterance duration up front. Learn the
+  // active voice's pace from completed reads and refine it with word-boundary
+  // events so the countdown can overlap the final 200ms of speech.
+  var learnedSpeechMsPerCharacter = 60;
   function pickVoice() {
     if (!window.speechSynthesis) return null;
     var voices = window.speechSynthesis.getVoices() || [];
@@ -994,13 +998,38 @@
     cachedVoice = pickVoice();
     window.speechSynthesis.onvoiceschanged = function () { cachedVoice = pickVoice(); };
   }
-  function speak(text, onDone) {
+  function speak(text, onDone, onBeforeEnd, beforeEndMs) {
     var finished = false;
     var fallbackId = null;
+    var leadTimerId = null;
+    var leadFired = false;
+    var speechStartTime = 0;
+    var textLength = Math.max(1, String(text).length);
+    var leadMs = Math.max(0, Number(beforeEndMs) || 0);
+
+    function fireLead(startedBeforeEnd) {
+      if (leadFired || typeof onBeforeEnd !== 'function') return;
+      leadFired = true;
+      if (leadTimerId) clearTimeout(leadTimerId);
+      leadTimerId = null;
+      onBeforeEnd(startedBeforeEnd === true);
+    }
+
+    function scheduleLead(delayMs) {
+      if (leadFired || finished || typeof onBeforeEnd !== 'function') return;
+      if (leadTimerId) clearTimeout(leadTimerId);
+      leadTimerId = setTimeout(function () { fireLead(true); }, Math.max(0, delayMs));
+    }
+
     function finish() {
       if (finished) return;
       finished = true;
       if (fallbackId) clearTimeout(fallbackId);
+      if (leadTimerId) clearTimeout(leadTimerId);
+      leadTimerId = null;
+      // If timing events were unavailable, start at speech completion rather
+      // than risk leaving the round without a countdown.
+      fireLead(false);
       if (typeof onDone === 'function') onDone();
     }
     if (state.muted) { finish(); return; }
@@ -1015,9 +1044,32 @@
       // raised pitch for extra enthusiasm.
       u.rate = 1.1; u.pitch = 1.05; u.volume = 1;
       if (cachedVoice) u.voice = cachedVoice;
-      u.onend = finish;
+      u.onstart = function () {
+        speechStartTime = performance.now();
+        scheduleLead(textLength * learnedSpeechMsPerCharacter - leadMs);
+      };
+      u.onboundary = function (event) {
+        var characterIndex = Number(event.charIndex);
+        var elapsedMs = Number(event.elapsedTime) * 1000;
+        if (!isFinite(characterIndex) || characterIndex <= 0 ||
+            !isFinite(elapsedMs) || elapsedMs <= 0) return;
+        var observedPace = Math.max(25, Math.min(120, elapsedMs / characterIndex));
+        var remainingMs = Math.max(0, textLength - characterIndex) * observedPace + 80;
+        scheduleLead(remainingMs - leadMs);
+      };
+      u.onend = function () {
+        if (speechStartTime) {
+          var samplePace = (performance.now() - speechStartTime) / textLength;
+          samplePace = Math.max(25, Math.min(120, samplePace));
+          learnedSpeechMsPerCharacter = learnedSpeechMsPerCharacter * 0.75 + samplePace * 0.25;
+        }
+        finish();
+      };
       u.onerror = finish;
       window.speechSynthesis.speak(u);
+      // Covers engines that provide onend but omit onstart/onboundary. The
+      // small allowance is for speech-engine startup latency.
+      scheduleLead(120 + textLength * learnedSpeechMsPerCharacter - leadMs);
       // On iPhone, WebKit's platform speech session tears down shortly after
       // the spoken command ends. All three recordings show that teardown as
       // the same ~0.32s rendering freeze about 1.74s into the following
@@ -1627,12 +1679,13 @@
     drawTimerRing(0, '#35E892', 0);
   }
 
-  function startRingTimer() {
+  function startRingTimer(delayOverride) {
     stopRingAnimation(false);
     // The waiting ring is already visible. Keep it full through the handoff
     // so speech completion starts motion, not a second fade.
     drawTimerRing(1, '#35E892', 1);
-    state.startTime = performance.now() + RING_START_DELAY;
+    var startDelay = typeof delayOverride === 'number' ? Math.max(0, delayOverride) : RING_START_DELAY;
+    state.startTime = performance.now() + startDelay;
     state.timerRunning = true;
     var dotFadeOffset = 1 - RING_DOT_THRESHOLD;
     var animation = el.timerRing.animate([
@@ -1642,12 +1695,12 @@
       { offset: 1, strokeDashoffset: RING_CIRCUMFERENCE + 'px', color: '#FF5C5C', opacity: 0 }
     ], {
       duration: state.duration,
-      delay: RING_START_DELAY,
+      delay: startDelay,
       easing: 'linear',
       fill: 'both'
     });
     state.ringAnimation = animation;
-    state.failTimeoutId = setTimeout(handleFail, RING_START_DELAY + state.duration);
+    state.failTimeoutId = setTimeout(handleFail, startDelay + state.duration);
   }
 
   function showWaitingRing(roundToken) {
@@ -1678,11 +1731,12 @@
     state.currentAction = action;
 
     var count = Array.isArray(action) ? action.length : (action === 'COMBO' ? 4 : 1);
-    // Every action is 0.5s shorter than v82: single 2.5s, double 3s,
-    // triple 3.5s, and the long COMBO 5.5s. Any round containing WET
+    // Base timers are single 3.5s, double 4s, triple 4.5s, and the long
+    // COMBO 6.5s after adding one second to every prompt. WET
     // WILLY receives one additional second; any containing BULLY receives
     // three additional seconds. Both bonuses apply before speed scaling.
     var baseDuration = action === 'COMBO' ? 5500 : (count === 3 ? 3500 : (count === 2 ? 3000 : 2500));
+    baseDuration += 1000;
     var containsWetWilly = action === 'WILLY' || (Array.isArray(action) && action.indexOf('WILLY') !== -1);
     if (containsWetWilly) baseDuration += 1000;
     var containsBully = action === 'BULLY' || (Array.isArray(action) && action.indexOf('BULLY') !== -1);
@@ -1705,11 +1759,13 @@
     } else {
       showWaitingRing(roundToken);
     }
-    speak(sayText, function () {
+    speak(sayText, null, function (startedBeforeEnd) {
       // A cancelled older utterance must never start a newer round's timer.
       if (state.gameState !== 'playing' || state.attempted || roundToken !== state.roundToken) return;
-      startRingTimer();
-    });
+      // A successful early handoff begins draining immediately. If speech
+      // timing events were unavailable, retain the normal 200ms full-ring hold.
+      startRingTimer(startedBeforeEnd ? 0 : RING_START_DELAY);
+    }, 200);
     // Queue speech before servicing deferred viewport/font work so layout
     // maintenance can never postpone the next spoken instruction.
     flushDeferredViewportWork();
