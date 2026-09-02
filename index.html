@@ -65,6 +65,12 @@
   }
   .logo-scroll-right,
   .logo-scroll-left { animation: logoRowsRight 30s linear infinite; }
+  .logo-icon-glow {
+    fill: #FFFFFF;
+    fill-opacity: 1;
+    opacity: 0;
+    pointer-events: none;
+  }
   @keyframes logoRowsRight {
     from { transform: translateX(-225px); }
     to { transform: translateX(0); }
@@ -610,7 +616,7 @@
 
 <div id="bgFill"></div>
 
-<div class="version-indicator" aria-hidden="true">v124</div>
+<div class="version-indicator" aria-hidden="true">v125</div>
 
 <div id="logoTile" aria-hidden="true">
   <svg xmlns="http://www.w3.org/2000/svg">
@@ -636,10 +642,10 @@
         </g>
       </pattern>
     </defs>
-    <g class="logo-scroll-layer logo-scroll-right">
+    <g class="logo-scroll-layer logo-scroll-right" id="logoScrollRight">
       <rect x="-50%" width="200%" height="100%" fill="url(#logoPattern)"></rect>
     </g>
-    <g class="logo-scroll-layer logo-scroll-left">
+    <g class="logo-scroll-layer logo-scroll-left" id="logoScrollLeft">
       <rect x="-50%" width="200%" height="100%" fill="url(#logoPatternLeft)"></rect>
     </g>
   </svg>
@@ -750,6 +756,8 @@
     logoTile: document.getElementById('logoTile'),
     logoPattern: document.getElementById('logoPattern'),
     logoPatternLeft: document.getElementById('logoPatternLeft'),
+    logoScrollRight: document.getElementById('logoScrollRight'),
+    logoScrollLeft: document.getElementById('logoScrollLeft'),
     logoTopMask: document.getElementById('logoTopMask'),
     logoBottomMask: document.getElementById('logoBottomMask')
   };
@@ -1155,7 +1163,10 @@
     'HEY!',
     "I don't want to stop hanging out with you!",
     'I have a lot of love in my heart for you!',
-    'Honk Shoo Mimimi'
+    'Honk Shoo Mimimi',
+    'Can you hold me?',
+    '(Neck getting kissed noises)',
+    "I'm not dorky!"
   ];
 
   function chooseRandomSubtitle(avoidCurrent) {
@@ -1177,8 +1188,97 @@
   var LOGO_ICON_TOP_IN_ROW = 20;
   var LOGO_ICON_BOTTOM_IN_ROW = 55;
   var LOGO_ICON_HEIGHT = LOGO_ICON_BOTTOM_IN_ROW - LOGO_ICON_TOP_IN_ROW;
+  var LOGO_COLUMN_PITCH = 225;
+  var LOGO_GLOW_DURATION = 1800;
+  var LOGO_RIGHT_ROW_ICONS = [
+    { path: 'tileIconCinnamoroll', centerX: 37.5, hitHalfWidth: 33, scaled: true },
+    { path: 'tileIconMiffy', centerX: 112.5, hitHalfWidth: 13, scaled: false },
+    { path: 'tileIconSnoopy', centerX: 187.5, hitHalfWidth: 16, scaled: false }
+  ];
+  var LOGO_LEFT_ROW_ICONS = [
+    { path: 'tileIconMiffy', centerX: 0, hitHalfWidth: 13, scaled: false },
+    { path: 'tileIconSnoopy', centerX: 75, hitHalfWidth: 16, scaled: false },
+    { path: 'tileIconCinnamoroll', centerX: 150, hitHalfWidth: 33, scaled: true }
+  ];
   function positiveModulo(value, divisor) {
     return ((value % divisor) + divisor) % divisor;
+  }
+
+  function getTranslateX(node) {
+    var value = node ? getComputedStyle(node).transform : 'none';
+    if (!value || value === 'none') return 0;
+    try {
+      var MatrixType = window.DOMMatrixReadOnly || window.DOMMatrix || window.WebKitCSSMatrix;
+      if (MatrixType) return new MatrixType(value).m41 || 0;
+    } catch (matrixError) {}
+    var parts = value.match(/^matrix\(([^)]+)\)$/);
+    if (parts) return parseFloat(parts[1].split(',')[4]) || 0;
+    var parts3d = value.match(/^matrix3d\(([^)]+)\)$/);
+    return parts3d ? (parseFloat(parts3d[1].split(',')[12]) || 0) : 0;
+  }
+
+  function findPressedBackgroundIcon(localX, rowIndex) {
+    var specs = rowIndex % 2 === 0 ? LOGO_RIGHT_ROW_ICONS : LOGO_LEFT_ROW_ICONS;
+    var best = null;
+    specs.forEach(function (spec) {
+      var instance = Math.round((localX - spec.centerX) / LOGO_COLUMN_PITCH);
+      var centerX = spec.centerX + instance * LOGO_COLUMN_PITCH;
+      var distance = Math.abs(localX - centerX);
+      if (distance <= spec.hitHalfWidth && (!best || distance < best.distance)) {
+        best = { spec: spec, instance: instance, centerX: centerX, distance: distance };
+      }
+    });
+    return best;
+  }
+
+  function glowBackgroundIcon(e) {
+    if (state.gameState === 'playing' || state.morphingOut || layoutMorphActive) return;
+    // Transparent layout wrappers cover much of a phone screen, so block
+    // only the actual visible game UI rather than the app's whole rectangle.
+    if (e.target && e.target.closest && e.target.closest(
+      'button, .dork-title, .dork-subtitle, .dork-overlay, .dork-readout, .dork-ring'
+    )) return;
+    if (!el.logoTile || !el.logoScrollRight || !el.logoScrollLeft) return;
+
+    // The artwork begins at y=0 and repeats every 75px. Ignore presses in
+    // the empty 40px band between one painted icon row and the next.
+    var rowIndex = Math.floor(e.clientY / LOGO_ROW_PITCH);
+    var rowY = e.clientY - rowIndex * LOGO_ROW_PITCH;
+    if (rowIndex < 0 || rowY < 0 || rowY > LOGO_ICON_HEIGHT) return;
+
+    var group = rowIndex % 2 === 0 ? el.logoScrollRight : el.logoScrollLeft;
+    var tileRect = el.logoTile.getBoundingClientRect();
+    var localX = e.clientX - tileRect.left - getTranslateX(group);
+    var match = findPressedBackgroundIcon(localX, rowIndex);
+    if (!match) return;
+
+    var rowOriginY = rowIndex * LOGO_ROW_PITCH - LOGO_ICON_TOP_IN_ROW - tileRect.top;
+    var use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', '#' + match.spec.path);
+    use.setAttribute('x', String(match.centerX - 37.5));
+    use.setAttribute('y', String(rowOriginY));
+    use.setAttribute('class', 'logo-icon-glow');
+    use.setAttribute('aria-hidden', 'true');
+    if (match.spec.scaled) {
+      var centerY = rowOriginY + 37.5;
+      use.setAttribute('transform',
+        'translate(' + match.centerX + ' ' + centerY + ') scale(1.8) translate(' +
+        (-match.centerX) + ' ' + (-centerY) + ')');
+    }
+    group.appendChild(use);
+
+    var glow = use.animate([
+      { offset: 0, opacity: 0 },
+      { offset: 0.2, opacity: 1 },
+      { offset: 0.756, opacity: 1 },
+      { offset: 1, opacity: 0 }
+    ], { duration: LOGO_GLOW_DURATION, easing: 'ease-in-out', fill: 'forwards' });
+    glow.onfinish = function () { use.remove(); };
+    glow.oncancel = function () { use.remove(); };
+  }
+
+  function clearBackgroundGlows() {
+    document.querySelectorAll('.logo-icon-glow').forEach(function (node) { node.remove(); });
   }
 
   function updateLogoRowMasks() {
@@ -1655,6 +1755,7 @@
   }
 
   function startGame() {
+    clearBackgroundGlows();
     state.score = 0;
     state.speedMultiplier = 1;
     state.beatHighScore = false;
@@ -1935,6 +2036,8 @@
   }
 
   // ---------- controls ----------
+  document.addEventListener('pointerdown', glowBackgroundIcon, { passive: true });
+
   el.dorkSubtitle.addEventListener('click', function (e) {
     if (state.gameState === 'playing' || state.morphingOut || layoutMorphActive || subtitleChanging) return;
     e.preventDefault();
