@@ -543,7 +543,7 @@
   .dork-highscore { font-family: 'Fredoka', sans-serif; font-weight: 700; color: #7A5A38; font-size: clamp(14px, 3.2vw, 18px); margin-top: 8px; }
 
   .dork-gameover-title {
-    font-family: 'Fredoka', sans-serif; font-weight: 700; font-size: clamp(30px, 7vw, 42px); color: #FF5C5C; margin-bottom: 8px;
+    font-family: 'Fredoka', sans-serif; font-weight: 700; font-size: clamp(30px, 7vw, 42px); color: #000; margin-bottom: 8px;
   }
   .dork-gameover-score { font-family: 'Fredoka', sans-serif; font-weight: 700; font-size: clamp(34px, 8vw, 48px); color: #3B230F; margin-bottom: 4px; }
   .dork-gameover-sub { font-family: 'Baloo 2', sans-serif; font-weight: 600; color: #7A5A38; font-size: clamp(14px, 3.2vw, 18px); margin-bottom: 24px; }
@@ -606,7 +606,7 @@
 
 <div id="bgFill"></div>
 
-<div class="version-indicator" aria-hidden="true">v128</div>
+<div class="version-indicator" aria-hidden="true">v129</div>
 
 <div id="logoTile" aria-hidden="true">
   <svg xmlns="http://www.w3.org/2000/svg">
@@ -672,7 +672,7 @@
     </div>
 
     <div class="dork-overlay" id="gameoverOverlay" style="display:none;">
-      <div class="dork-gameover-title">DORKED IT! 🤪</div>
+      <div class="dork-gameover-title" id="gameoverTitle">DORKED IT! 🤪</div>
       <div class="dork-gameover-score" id="finalScore">0</div>
       <div class="dork-gameover-sub" id="gameoverSub">HIGH SCORE: 0</div>
       <button class="dork-btn" id="playAgainBtn">GO AGAIN</button>
@@ -739,6 +739,7 @@
     startBtn: document.getElementById('startBtn'),
     playAgainBtn: document.getElementById('playAgainBtn'),
     finalScore: document.getElementById('finalScore'),
+    gameoverTitle: document.getElementById('gameoverTitle'),
     gameoverSub: document.getElementById('gameoverSub'),
     dorkHeader: document.getElementById('dorkHeader'),
     dorkTitle: document.getElementById('dorkTitle'),
@@ -1237,6 +1238,7 @@
     '(Neck getting kissed noises)',
     "I'm not dorky!"
   ];
+  var GAMEOVER_EMOJIS = ['🤪', '🤓', '😭', '🥸', '😔', '😵‍💫'];
 
   function chooseRandomSubtitle(avoidCurrent) {
     if (!el.dorkSubtitle) return;
@@ -1247,6 +1249,11 @@
     var subtitle = choices[Math.floor(Math.random() * choices.length)];
     el.dorkSubtitle.textContent = subtitle;
     el.dorkSubtitle.setAttribute('aria-label', subtitle);
+  }
+
+  function randomizeGameoverTitle() {
+    var emoji = GAMEOVER_EMOJIS[Math.floor(Math.random() * GAMEOVER_EMOJIS.length)];
+    el.gameoverTitle.textContent = 'DORKED IT! ' + emoji;
   }
 
   var LOGO_ROW_PITCH = 75;
@@ -1681,6 +1688,7 @@
       isNewHigh = true;
       try { localStorage.setItem('dorkit-highscore', JSON.stringify(state.highScore)); } catch (e) {}
     }
+    randomizeGameoverTitle();
     el.finalScore.textContent = state.score;
     el.gameoverSub.textContent = isNewHigh ? 'NEW HIGH SCORE!' : ('HIGH SCORE: ' + state.highScore);
     // Skip the score-box/title layout change here — it's triggered later,
@@ -2272,7 +2280,12 @@
     }
   });
 
-  chooseRandomSubtitle(false);
+  if (state.highScore === 0) {
+    el.dorkSubtitle.textContent = SUBTITLE_OPTIONS[0];
+    el.dorkSubtitle.setAttribute('aria-label', SUBTITLE_OPTIONS[0]);
+  } else {
+    chooseRandomSubtitle(false);
+  }
   render();
   fitTitle();
   updateLogoRowMasks();
