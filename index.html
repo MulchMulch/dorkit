@@ -263,7 +263,7 @@
   }
   .dork-glyph-i {
     width: 0.301em;
-    margin-right: 2px;
+    margin-right: -3px;
     background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMgAAAKlCAMAAAC5c1MBAAAACVBMVEUAAAAAAAD/+O0/JShdAAAAAXRSTlMAQObYZgAABTxJREFUeNrt3EFu7DgMBFDl3//Qs/qLwQwQSyJFWn61b7AeGKXdsTtjZObnb1KnHOj/31RX2xe8x/MY0doyq+hpWVN0s+woGln2GR0sQYpqSiSjkBLNKKJkMAooWYzDlEzGSUq24xDlAOME5RAjXXLOkUs56siTHGakSc47cigljnhJESNcUueIpZQ6AiXFjjBJNSNKUo2IklQToiTVgChJdf0oSXX5KEl19ShJdfEoSXXtKEl16TBJdecoSXXjKEh14ShJdd0wSXXbKEl11yhI4NQ/f1MiCRX8O0chWYgwyxnHnwd5AeQJY9+S7Xis2KakQuYYe5Rejh1KGmSJsUFJciwz8iTHHauUho4USQVjUdLRsUaJhQQ5ViQ9HbGSSseCpKkjUFLsmJcEQcIdUZJ6x7SkLyRC0sJxHpLkmJVcA/lp69hfSRfHPZBNSR/HpAQk3zEnuRXSyrEjAamXLENOOJYh3RYyI2m9kOVD0g6y+rMF8l7IIcfqaQfpAPm5ENLQcQ9k6ZCAgICA1EFWJC0h12wEBAQEBAQEBAQE5DOQWxwgICAgICAgICAgICAgICAgICCXQ655XgAEBAQEBGQL8nML5JqNgICAgICAgICAgHwGcs1fGkFAQEBAQEBAQEBAQIocICAgTyEdHSAgICAgICAgICAgICAgICAgICAgICAgIAmS3jd6QEBAQEBAQEBAQEBAQAokz1/RfCUgICAgICAgICAgICAgICAgbSCtJSAgICAgICCfvUYBAQEBAQEBAQEBAQEB+R/IjAQEBAQEBAQEBAQEBAQEBATkw5CeX6kEAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBWYC0dFwDeV4KBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBOSbkAECAgICAgICAgICAgICAgICAgICAgICAgICAgICchxyzT94AfkWpPlpBwEBAXkF5Kc3ZGElIF0gPyDvhzT9tfUDApIqAQGJl0xDuq7kuxs5CpmVgIAkSEBAQEA6QOYkICAgICDtIa3fEUGaOUBAQEBAQC6FzDkaXzWCfAnS9JZVb8hEK5ALIOckM6VugSw85wTyXchMp4XHM89JQJpBpipdA2l82ucqrUGOSECaSWYbfR2SLpkutHT5exMkWTLfByRVslBnHZIoWWmzAcmT3AJZKrMDyZKch+RIFrssfF8hV7JapRtk2bEHCZesOzYhwZINxy4kVLLj2IYESrYc+5AwyZ5j740kkrLpCIFESHYdMZBtyTZj+UN7rGTfEQbZogRMD4QsU0Jmh0LWJDGjYyELlKjB0ZBJStzYeMiEJXRoBuSRJXpiEuQXS/y0tXtvW5icScmQc7kO8noJSLeAdMstkAHSLBdCXi65BTJAmmVcIhkgzQLSLGNcIgFplgHSLOMSyQBplnGJZID0yhiXSG6HvE4yroe8TDI+AHmVZHwC8iLJ+AjkNZLfHPdAXiL53XEP5BWSJ457IC+QPHP0lzx1tJfcAnnuaC6ZgXSWTDkaSyYdbSGzjraSeUhPyYKjpWTJ0RCy5ugnWXV0k6w7ekl2HJ0ke44+kl1HF8m+o4ckwtFBEuOol0Q5qiVxjlpKqKNQEuyokoQziiQZjgpKkuO0JI1xWJLpOElJdpyi5DPOSI448imnGMmUk4xEymlGEqWCkUCpYgRTKhmBlmpFjKW6f4ylunmMpbpzjKW6bQimuuWuKGvWP6OVtypOXxadAAAAAElFTkSuQmCC");
   }
   .dork-glyph-t {
@@ -591,7 +591,11 @@
   .dork-overlay {
     position: absolute; inset: 0; display: flex; flex-direction: column;
     align-items: center; justify-content: center; text-align: center;
-    padding: 0 8%; border-radius: 24px; background: #FFF8ED;
+    padding: 0 8%;
+    /* Uneven corner radii give the stationary rectangle a subtle hand-drawn
+       silhouette without changing its measured size or border thickness. */
+    border-radius: 23px 26px 22px 25px / 25px 22px 26px 23px;
+    background: #FFF8ED;
     border-style: solid; border-width: var(--dork-border-w); border-color: #3B230F;
     z-index: 20;
   }
@@ -683,7 +687,7 @@
 
 <div id="bgFill"></div>
 
-<div class="version-indicator" aria-hidden="true">v143</div>
+<div class="version-indicator" aria-hidden="true">v146</div>
 
 <div id="logoTile" aria-hidden="true">
   <svg xmlns="http://www.w3.org/2000/svg">
@@ -2273,7 +2277,9 @@
         'transform ' + MORPH_MS + 'ms cubic-bezier(.4,0,.2,1), ' +
         'border-radius ' + MORPH_MS + 'ms cubic-bezier(.4,0,.2,1)';
       shell.style.transform = 'translate(0px, 0px) scale(1, 1)';
-      shell.style.borderRadius = '24px';
+      // Match the real overlay's gently uneven corners exactly so the
+      // post-morph cross-fade has no outline snap.
+      shell.style.borderRadius = '23px 26px 22px 25px / 25px 22px 26px 23px';
       keepBorderVisuallyConstant(shell, MORPH_MS, trueBorderPx);
 
       setTimeout(function () {
