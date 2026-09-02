@@ -781,7 +781,7 @@
 
 <div id="bgFill"></div>
 
-<div class="version-indicator" aria-hidden="true">v0.155</div>
+<div class="version-indicator" aria-hidden="true">v0.157</div>
 
 <div id="logoTile" aria-hidden="true">
   <svg xmlns="http://www.w3.org/2000/svg">
@@ -1910,12 +1910,10 @@
     state.currentAction = action;
 
     var count = Array.isArray(action) ? action.length : (action === 'COMBO' ? 4 : 1);
-    // Base timers are single 3.5s, double 4s, triple 4.5s, and the long
-    // COMBO 6.5s after adding one second to every prompt. WET
-    // WILLY receives one additional second; any containing BULLY receives
-    // three additional seconds. Both bonuses apply before speed scaling.
-    var baseDuration = action === 'COMBO' ? 5500 : (count === 3 ? 3500 : (count === 2 ? 3000 : 2500));
-    baseDuration += 1000;
+    // Base timers are single 4s, double 5s, triple 6s, and long COMBO
+    // 6.5s. WET WILLY receives one additional second; any containing BULLY
+    // receives three additional seconds. Bonuses apply before speed scaling.
+    var baseDuration = action === 'COMBO' ? 6500 : (count === 3 ? 6000 : (count === 2 ? 5000 : 4000));
     var containsWetWilly = action === 'WILLY' || (Array.isArray(action) && action.indexOf('WILLY') !== -1);
     if (containsWetWilly) baseDuration += 1000;
     var containsBully = action === 'BULLY' || (Array.isArray(action) && action.indexOf('BULLY') !== -1);
@@ -2130,7 +2128,7 @@
       state.beatHighScore = true;
       try { localStorage.setItem('dorkit-highscore', JSON.stringify(state.highScore)); } catch (e) {}
     }
-    state.speedMultiplier *= 0.99; // 1% faster each success
+    state.speedMultiplier *= 0.98; // 2% shorter after each success
     var ns = state.score;
     render();
 
