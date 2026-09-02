@@ -59,6 +59,18 @@
     contain: strict;
   }
   #logoTile svg { display: block; width: 100%; height: 100%; }
+  /* These solid strips cover only the partial 75px pattern cells at the
+     viewport edges. Full icon rows remain visible; clipped rows disappear. */
+  .logo-row-mask {
+    position: fixed;
+    left: 0; right: 0;
+    height: 0;
+    background: #8FD3F4;
+    pointer-events: none;
+    contain: strict;
+  }
+  #logoTopMask { top: 0; }
+  #logoBottomMask { bottom: 0; }
   body {
     display: flex; align-items: center; justify-content: center;
     padding: 20px;
@@ -246,7 +258,10 @@
     z-index: 5;
     display: block;
     transform: translateX(-50%);
-    pointer-events: none;
+    pointer-events: auto;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
     white-space: nowrap;
     text-align: center;
     color: #FFF8ED;
@@ -258,6 +273,7 @@
     paint-order: stroke fill;
     filter: drop-shadow(0 0.1275em 0 #000);
   }
+  .dork-header.playing .dork-subtitle { pointer-events: none; }
   .dork-subbar { position: relative; display: flex; align-items: center; justify-content: center; gap: 28px; margin-top: 18px; }
   .dork-readout {
     font-family: 'Fredoka', sans-serif; font-weight: 700;
@@ -336,15 +352,34 @@
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
   }
-  .dork-ring-progress {
+  .dork-ring-arc {
+    color: #35E892;
     fill: none;
-    stroke: #35E892;
-    stroke-width: 6;
     stroke-linecap: round;
     stroke-dasharray: 295.31;
     stroke-dashoffset: 295.31;
     opacity: 0;
     shape-rendering: geometricPrecision;
+  }
+  /* Two extremely faint, slightly wider copies create a soft dark fade
+     immediately around the live arc. They inherit the arc's dash animation,
+     so no track remains behind after that part of the timer has elapsed. */
+  .dork-ring-halo-outer {
+    fill: none;
+    stroke: #3B230F;
+    stroke-width: 11;
+    opacity: 0.055;
+  }
+  .dork-ring-halo-inner {
+    fill: none;
+    stroke: #3B230F;
+    stroke-width: 8.5;
+    opacity: 0.14;
+  }
+  .dork-ring-progress {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 6;
   }
 
   /* The reverse morph uses a viewport-fixed tracker plus a nested shell.
@@ -565,7 +600,7 @@
 
 <div id="bgFill"></div>
 
-<div class="version-indicator" aria-hidden="true">v115</div>
+<div class="version-indicator" aria-hidden="true">v119</div>
 
 <div id="logoTile" aria-hidden="true">
   <svg xmlns="http://www.w3.org/2000/svg">
@@ -592,6 +627,9 @@
   </svg>
 </div>
 
+<div class="logo-row-mask" id="logoTopMask" aria-hidden="true"></div>
+<div class="logo-row-mask" id="logoBottomMask" aria-hidden="true"></div>
+
 <div class="dork-app">
   <div class="dork-header" id="dorkHeader">
     <div class="dork-title" id="dorkTitle"><span class="dork-title-word">D<span class="dork-title-head" role="img" aria-label="portrait head with glasses"><span class="head-drop" aria-hidden="true"></span><span class="head-stroke" aria-hidden="true"></span><span class="head-art" aria-hidden="true"></span></span>RK IT</span></div>
@@ -603,7 +641,11 @@
       <div class="dork-confirm-wrap" id="confirmWrap">
         <div class="dork-ring" id="ringSvg">
           <svg class="dork-ring-fg" viewBox="0 0 108 108" aria-hidden="true" focusable="false">
-            <circle class="dork-ring-progress" id="timerRing" cx="54" cy="54" r="47" transform="rotate(-90 54 54)"></circle>
+            <g class="dork-ring-arc" id="timerRing" transform="rotate(-90 54 54)">
+              <circle class="dork-ring-halo-outer" cx="54" cy="54" r="47"></circle>
+              <circle class="dork-ring-halo-inner" cx="54" cy="54" r="47"></circle>
+              <circle class="dork-ring-progress" cx="54" cy="54" r="47"></circle>
+            </g>
           </svg>
         </div>
         <button class="dork-confirm idle-bounce" id="confirmBtn"><span class="dork-confirm-label" id="confirmLabel">READY?</span></button>
@@ -686,7 +728,10 @@
     gameoverSub: document.getElementById('gameoverSub'),
     dorkHeader: document.getElementById('dorkHeader'),
     dorkTitle: document.getElementById('dorkTitle'),
-    dorkSubtitle: document.getElementById('dorkSubtitle')
+    dorkSubtitle: document.getElementById('dorkSubtitle'),
+    logoTile: document.getElementById('logoTile'),
+    logoTopMask: document.getElementById('logoTopMask'),
+    logoBottomMask: document.getElementById('logoBottomMask')
   };
 
   var state = {
@@ -1078,7 +1123,10 @@
   // after removing its exclamation mark.
   var titleFitPending = false;
   var scrollResetPending = false;
+  var logoMaskPending = false;
   var layoutMorphActive = false;
+  var subtitleChanging = false;
+  var titlePositionAnimation = null;
   var SUBTITLE_OPTIONS = [
     'I need to tell you how much I love you!',
     'I missed you!',
@@ -1090,14 +1138,41 @@
     'Honk Shoo Mimimi'
   ];
 
-  function chooseRandomSubtitle() {
+  function chooseRandomSubtitle(avoidCurrent) {
     if (!el.dorkSubtitle) return;
-    var subtitle = SUBTITLE_OPTIONS[Math.floor(Math.random() * SUBTITLE_OPTIONS.length)];
+    var current = avoidCurrent ? el.dorkSubtitle.textContent : '';
+    var choices = current ? SUBTITLE_OPTIONS.filter(function (subtitle) {
+      return subtitle !== current;
+    }) : SUBTITLE_OPTIONS;
+    var subtitle = choices[Math.floor(Math.random() * choices.length)];
     el.dorkSubtitle.textContent = subtitle;
     el.dorkSubtitle.setAttribute('aria-label', subtitle);
   }
 
-  function fitTitle() {
+  var LOGO_ROW_PITCH = 75;
+  function positiveModulo(value, divisor) {
+    return ((value % divisor) + divisor) % divisor;
+  }
+
+  function updateLogoRowMasks() {
+    if (!el.logoTile || !el.logoTopMask || !el.logoBottomMask) return;
+    // As with title fitting, postpone viewport reads while the iPhone timer
+    // is live so browser-chrome resize events cannot disturb its animation.
+    if (state.timerRunning || layoutMorphActive) {
+      logoMaskPending = true;
+      return;
+    }
+    logoMaskPending = false;
+    var tileTop = el.logoTile.getBoundingClientRect().top;
+    var topPhase = positiveModulo(-tileTop, LOGO_ROW_PITCH);
+    var bottomPhase = positiveModulo(window.innerHeight - tileTop, LOGO_ROW_PITCH);
+    var topMaskHeight = topPhase < 0.75 ? 0 : LOGO_ROW_PITCH - topPhase;
+    var bottomMaskHeight = bottomPhase < 0.75 ? 0 : bottomPhase;
+    el.logoTopMask.style.height = Math.max(0, topMaskHeight) + 'px';
+    el.logoBottomMask.style.height = Math.max(0, bottomMaskHeight) + 'px';
+  }
+
+  function fitTitle(animatePosition) {
     var titleEl = el.dorkTitle;
     var container = el.dorkHeader;
     if (!titleEl || !container) return;
@@ -1109,6 +1184,8 @@
       return;
     }
     titleFitPending = false;
+    var shouldAnimatePosition = animatePosition === true;
+    var previousTitleTransform = getComputedStyle(titleEl).transform;
     // Measure and apply in the same JavaScript turn. The previous version
     // cleared the fitted size and waited for requestAnimationFrame, which
     // allowed one oversized, right-shifted title frame to be painted.
@@ -1139,20 +1216,42 @@
       }
       // Preserve the original header bottom edge by lifting the main title
       // just enough to make room for the centered subtitle beneath it.
-      titleEl.style.transform = 'translateY(-' + Math.max(10, subtitleSize * 0.9) + 'px)';
+      // Add a small amount of breathing room above the subtitle without
+      // pushing the subtitle itself closer to the menu panel below.
+      titleEl.style.transform = 'translateY(-' + (Math.max(10, subtitleSize * 0.9) + 3) + 'px)';
     }
+    var finalTitleTransform = getComputedStyle(titleEl).transform;
     titleEl.style.transition = prevTransition;
+    if (shouldAnimatePosition && previousTitleTransform !== finalTitleTransform && typeof titleEl.animate === 'function') {
+      if (titlePositionAnimation) titlePositionAnimation.cancel();
+      var positionAnimation = titleEl.animate([
+        { transform: previousTitleTransform },
+        { transform: finalTitleTransform }
+      ], {
+        duration: 320,
+        easing: 'cubic-bezier(.4,0,.2,1)'
+      });
+      titlePositionAnimation = positionAnimation;
+      positionAnimation.onfinish = function () {
+        if (titlePositionAnimation === positionAnimation) titlePositionAnimation = null;
+      };
+      positionAnimation.oncancel = function () {
+        if (titlePositionAnimation === positionAnimation) titlePositionAnimation = null;
+      };
+    }
   }
 
   function flushDeferredViewportWork() {
     if (state.timerRunning) return;
     if (titleFitPending) fitTitle();
+    if (logoMaskPending) updateLogoRowMasks();
     if (scrollResetPending) {
       scrollResetPending = false;
       resetScroll();
     }
   }
   window.addEventListener('resize', fitTitle);
+  window.addEventListener('resize', updateLogoRowMasks);
   // Re-run once the webfont actually swaps in — the font loads async
   // (font-display: swap), so the very first fitTitle() call can measure
   // against the fallback font and under-shrink before Fredoka arrives.
@@ -1246,7 +1345,7 @@
       var liveStyle = getComputedStyle(el.timerRing);
       snapshot = {
         dashoffset: liveStyle.strokeDashoffset,
-        stroke: liveStyle.stroke,
+        color: liveStyle.color,
         opacity: liveStyle.opacity
       };
     }
@@ -1255,7 +1354,7 @@
     animation.cancel();
     if (snapshot) {
       el.timerRing.style.strokeDashoffset = snapshot.dashoffset;
-      el.timerRing.style.stroke = snapshot.stroke;
+      el.timerRing.style.color = snapshot.color;
       el.timerRing.style.opacity = snapshot.opacity;
     }
   }
@@ -1264,7 +1363,9 @@
     var p = Math.max(0, Math.min(1, progress));
     el.timerRing.style.strokeDasharray = RING_CIRCUMFERENCE + 'px';
     el.timerRing.style.strokeDashoffset = (RING_CIRCUMFERENCE * (1 - p)) + 'px';
-    el.timerRing.style.stroke = color;
+    // The countdown arc is always one solid color. Its color interpolates
+    // over time while the two inherited halo strokes fade just outside it.
+    el.timerRing.style.color = color;
     el.timerRing.style.opacity = String(Math.max(0, Math.min(1, alpha)));
   }
 
@@ -1275,17 +1376,17 @@
 
   function startRingTimer() {
     stopRingAnimation(false);
-    // The waiting ring is already visible. Keep it fully green through
-    // the handoff so speech completion starts motion, not a second fade.
+    // The waiting ring is already visible. Keep it full through the handoff
+    // so speech completion starts motion, not a second fade.
     drawTimerRing(1, '#35E892', 1);
     state.startTime = performance.now() + RING_START_DELAY;
     state.timerRunning = true;
     var dotFadeOffset = 1 - RING_DOT_THRESHOLD;
     var animation = el.timerRing.animate([
-      { offset: 0, strokeDashoffset: '0px', stroke: '#35E892', opacity: 1 },
-      { offset: 0.5, strokeDashoffset: (RING_CIRCUMFERENCE * 0.5) + 'px', stroke: '#FFD93D', opacity: 1 },
-      { offset: dotFadeOffset, strokeDashoffset: (RING_CIRCUMFERENCE * dotFadeOffset) + 'px', stroke: '#FF5F5C', opacity: 1 },
-      { offset: 1, strokeDashoffset: RING_CIRCUMFERENCE + 'px', stroke: '#FF5C5C', opacity: 0 }
+      { offset: 0, strokeDashoffset: '0px', color: '#35E892', opacity: 1 },
+      { offset: 0.5, strokeDashoffset: (RING_CIRCUMFERENCE * 0.5) + 'px', color: '#FFD93D', opacity: 1 },
+      { offset: dotFadeOffset, strokeDashoffset: (RING_CIRCUMFERENCE * dotFadeOffset) + 'px', color: '#FF5F5C', opacity: 1 },
+      { offset: 1, strokeDashoffset: RING_CIRCUMFERENCE + 'px', color: '#FF5C5C', opacity: 0 }
     ], {
       duration: state.duration,
       delay: RING_START_DELAY,
@@ -1798,6 +1899,37 @@
   }
 
   // ---------- controls ----------
+  el.dorkSubtitle.addEventListener('click', function (e) {
+    if (state.gameState === 'playing' || state.morphingOut || layoutMorphActive || subtitleChanging) return;
+    e.preventDefault();
+    e.stopPropagation();
+    subtitleChanging = true;
+
+    var fadeOut = el.dorkSubtitle.animate([
+      { opacity: 1 },
+      { opacity: 0 }
+    ], { duration: 180, easing: 'ease-in', fill: 'forwards' });
+
+    fadeOut.finished.then(function () {
+      chooseRandomSubtitle(true);
+      fitTitle(true);
+      fadeOut.cancel();
+      var fadeIn = el.dorkSubtitle.animate([
+        { opacity: 0 },
+        { opacity: 1 }
+      ], { duration: 240, easing: 'ease-out', fill: 'forwards' });
+      fadeIn.finished.then(function () {
+        fadeIn.cancel();
+        el.dorkSubtitle.style.opacity = '1';
+        subtitleChanging = false;
+      }).catch(function () {
+        subtitleChanging = false;
+      });
+    }).catch(function () {
+      subtitleChanging = false;
+    });
+  });
+
   var highScoreTapTimes = [];
   var HIGH_SCORE_RESET_WINDOW_MS = 900;
   el.highScoreBox.addEventListener('click', function (e) {
@@ -1865,8 +1997,16 @@
     // and synchronous viewport update on every Safari resize event.
     if (window.scrollX !== 0 || window.scrollY !== 0) window.scrollTo(0, 0);
   }
-  window.addEventListener('load', resetScroll);
-  window.addEventListener('orientationchange', function () { setTimeout(resetScroll, 50); });
+  window.addEventListener('load', function () {
+    resetScroll();
+    updateLogoRowMasks();
+  });
+  window.addEventListener('orientationchange', function () {
+    setTimeout(function () {
+      resetScroll();
+      updateLogoRowMasks();
+    }, 50);
+  });
   window.addEventListener('resize', resetScroll);
   document.addEventListener('scroll', resetScroll, { passive: true });
 
@@ -1882,9 +2022,10 @@
     }
   });
 
-  chooseRandomSubtitle();
+  chooseRandomSubtitle(false);
   render();
   fitTitle();
+  updateLogoRowMasks();
 })();
 </script>
 </body>
