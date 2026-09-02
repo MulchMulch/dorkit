@@ -196,7 +196,7 @@
     display: flex; align-items: center; gap: 10px;
     white-space: nowrap; max-width: 100%;
     transition: font-size 380ms cubic-bezier(.4,0,.2,1);
-    transform: translateY(clamp(-22px, -3.4vmin, -12px));
+    transform: translateY(-12px);
   }
   .dork-title-word {
     display: inline-flex;
@@ -244,15 +244,14 @@
     left: 50%;
     bottom: 0;
     z-index: 5;
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
+    display: block;
     transform: translateX(-50%);
     pointer-events: none;
     white-space: nowrap;
+    text-align: center;
     color: #FFF8ED;
     font-family: 'Fredoka One', 'Baloo 2', sans-serif;
-    font-size: clamp(11px, 3.4vmin, 22px);
+    font-size: 16px;
     font-weight: 400;
     line-height: 1;
     -webkit-text-stroke: 0.065em #000;
@@ -566,7 +565,7 @@
 
 <div id="bgFill"></div>
 
-<div class="version-indicator" aria-hidden="true">v111</div>
+<div class="version-indicator" aria-hidden="true">v112</div>
 
 <div id="logoTile" aria-hidden="true">
   <svg xmlns="http://www.w3.org/2000/svg">
@@ -596,7 +595,7 @@
 <div class="dork-app">
   <div class="dork-header" id="dorkHeader">
     <div class="dork-title" id="dorkTitle"><span class="dork-title-word">D<span class="dork-title-head" role="img" aria-label="portrait head with glasses"><span class="head-drop" aria-hidden="true"></span><span class="head-stroke" aria-hidden="true"></span><span class="head-art" aria-hidden="true"></span></span>RK IT!</span></div>
-    <div class="dork-subtitle" id="dorkSubtitle" role="note" aria-label="I need to tell you how much I love you"><span aria-hidden="true">I</span><span aria-hidden="true">need</span><span aria-hidden="true">to</span><span aria-hidden="true">tell</span><span aria-hidden="true">you</span><span aria-hidden="true">how</span><span aria-hidden="true">much</span><span aria-hidden="true">I</span><span aria-hidden="true">love</span><span aria-hidden="true">you</span></div>
+    <div class="dork-subtitle" id="dorkSubtitle" role="note">I need to tell you how much I love you!</div>
   </div>
 
   <div class="dork-relative">
@@ -1079,6 +1078,23 @@
   var titleFitPending = false;
   var scrollResetPending = false;
   var layoutMorphActive = false;
+  var SUBTITLE_OPTIONS = [
+    'I need to tell you how much I love you!',
+    'I missed you!',
+    '(Dorky Noises)',
+    'Hmph!',
+    'Hey!',
+    "I don't want to stop hanging out with you!",
+    'I have a lot of love in my heart for you!',
+    'Honk Shoo Mimimi'
+  ];
+
+  function chooseRandomSubtitle() {
+    if (!el.dorkSubtitle) return;
+    var subtitle = SUBTITLE_OPTIONS[Math.floor(Math.random() * SUBTITLE_OPTIONS.length)];
+    el.dorkSubtitle.textContent = subtitle;
+    el.dorkSubtitle.setAttribute('aria-label', subtitle);
+  }
 
   function fitTitle() {
     var titleEl = el.dorkTitle;
@@ -1108,9 +1124,24 @@
     }
     // Flush only the completed size; no intermediate size can reach paint.
     void titleEl.offsetWidth;
-    // Match the subtitle to the fitted title itself—not merely its header
-    // container—so the first and last words share the title's exact edges.
-    if (el.dorkSubtitle) el.dorkSubtitle.style.width = titleEl.offsetWidth + 'px';
+    if (el.dorkSubtitle) {
+      // The subtitle begins at exactly one quarter of the fitted title's
+      // font size. Exceptionally long choices shrink only enough to remain
+      // centered on one line inside the header.
+      var fittedTitleSize = parseFloat(getComputedStyle(titleEl).fontSize) || 64;
+      var subtitleSize = fittedTitleSize * 0.25;
+      el.dorkSubtitle.style.width = 'max-content';
+      el.dorkSubtitle.style.fontSize = subtitleSize + 'px';
+      var subtitleMaxWidth = container.clientWidth * 0.96;
+      var subtitleNaturalWidth = el.dorkSubtitle.scrollWidth;
+      if (subtitleNaturalWidth > subtitleMaxWidth) {
+        subtitleSize = Math.max(9, subtitleSize * subtitleMaxWidth / subtitleNaturalWidth);
+        el.dorkSubtitle.style.fontSize = subtitleSize + 'px';
+      }
+      // Preserve the original header bottom edge by lifting the main title
+      // just enough to make room for the centered subtitle beneath it.
+      titleEl.style.transform = 'translateY(-' + Math.max(10, subtitleSize * 0.9) + 'px)';
+    }
     titleEl.style.transition = prevTransition;
   }
 
@@ -1852,6 +1883,7 @@
     }
   });
 
+  chooseRandomSubtitle();
   render();
   fitTitle();
 })();
