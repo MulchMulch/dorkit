@@ -468,8 +468,8 @@
     color: #35E892;
     fill: none;
     stroke-linecap: round;
-    stroke-dasharray: 295.31;
-    stroke-dashoffset: 295.31;
+    stroke-dasharray: 292.17;
+    stroke-dashoffset: 292.17;
     opacity: 0;
     shape-rendering: geometricPrecision;
   }
@@ -491,7 +491,8 @@
   .dork-ring-progress {
     fill: none;
     stroke: currentColor;
-    stroke-width: 6;
+    /* One unit thicker inward while retaining the original outer radius. */
+    stroke-width: 7;
   }
 
   /* The reverse morph uses a viewport-fixed tracker plus a nested shell.
@@ -765,7 +766,7 @@
 
 <div id="bgFill"></div>
 
-<div class="version-indicator" aria-hidden="true">v150</div>
+<div class="version-indicator" aria-hidden="true">v0.151</div>
 
 <div id="logoTile" aria-hidden="true">
   <svg xmlns="http://www.w3.org/2000/svg">
@@ -815,9 +816,9 @@
         <div class="dork-ring" id="ringSvg">
           <svg class="dork-ring-fg" viewBox="0 0 108 108" aria-hidden="true" focusable="false">
             <g class="dork-ring-arc" id="timerRing" transform="rotate(-90 54 54)">
-              <circle class="dork-ring-halo-outer" cx="54" cy="54" r="47"></circle>
-              <circle class="dork-ring-halo-inner" cx="54" cy="54" r="47"></circle>
-              <circle class="dork-ring-progress" cx="54" cy="54" r="47"></circle>
+              <circle class="dork-ring-halo-outer" cx="54" cy="54" r="46.5"></circle>
+              <circle class="dork-ring-halo-inner" cx="54" cy="54" r="46.5"></circle>
+              <circle class="dork-ring-progress" cx="54" cy="54" r="46.5"></circle>
             </g>
           </svg>
         </div>
@@ -875,8 +876,8 @@
     COMBO:            { label: "HUMP IT WHILE KISSING THE BACK OF ITS NECK AND TWISTING ITS NIPPLES AND HOLDING ITS TOES", color: "#FFD700", say: "Hump it, while kissing the back of its neck, and twisting its nipples and holding its toes!", confetti: ["🎆","🌟","💛","🎉"] }
   };
   var REGULAR_ACTIONS = Object.keys(META).filter(function (k) { return k !== 'COMBO'; });
-  var RING_CIRCUMFERENCE = 2 * Math.PI * 47; // ~295.31
-  var RING_STROKE_WIDTH = 6; // matches .dork-ring-fg's stroke-width, same viewBox units
+  var RING_CIRCUMFERENCE = 2 * Math.PI * 46.5; // ~292.17
+  var RING_STROKE_WIDTH = 7; // matches .dork-ring-progress, same viewBox units
   // Once the remaining arc is shorter than the ring's own stroke width,
   // a round stroke-linecap stops shrinking and just sits there as a
   // solid dot. Below this fraction of time remaining we fade the ring's
@@ -1735,23 +1736,24 @@
     el.confirmWrap.classList.remove('pulsing');
     el.confirmBtn.classList.toggle('idle-bounce', !playing && !state.morphingOut);
     el.confirmBtn.classList.toggle('combo', playing && state.currentAction === 'COMBO');
+    // The visible outline is always the custom hand-drawn SVG. Keeping the
+    // native circular border transparent prevents render() after a press from
+    // restoring a smooth ring over it.
+    el.confirmBtn.style.borderColor = 'transparent';
     if (!skipPlayingLayout) setPlayingLayout(playing);
 
     if (playing && state.currentAction) {
       if (Array.isArray(state.currentAction)) {
         var labels = state.currentAction.map(function (key) { return META[key].label; });
         el.confirmLabel.textContent = labels.join(' AND ');
-        el.confirmBtn.style.borderColor = '#3B230F';
         el.confirmBtn.classList.remove('long-label');
       } else {
         var meta = META[state.currentAction];
         el.confirmLabel.textContent = meta.label;
-        el.confirmBtn.style.borderColor = '#3B230F';
         el.confirmBtn.classList.remove('long-label');
       }
     } else if (!state.morphingOut) {
       el.confirmLabel.textContent = 'READY?';
-      el.confirmBtn.style.borderColor = '#3B230F';
       el.confirmBtn.classList.remove('long-label');
       // Idle/game-over always uses a hidden timer stroke. The next
       // round draws a fresh green ring and fades it in from zero.
