@@ -643,7 +643,7 @@
 
 <div id="bgFill"></div>
 
-<div class="version-indicator" aria-hidden="true">v131</div>
+<div class="version-indicator" aria-hidden="true">v135</div>
 
 <div id="logoTile" aria-hidden="true">
   <svg xmlns="http://www.w3.org/2000/svg">
@@ -798,6 +798,7 @@
     highScore: 0,
     muted: false,
     attempted: false,
+    buttonSettling: false,
     ringAnimation: null,
     failTimeoutId: null,
     scorePulseAnimation: null,
@@ -1696,9 +1697,6 @@
     }
     clearTimer(ringIsAlreadyFull);
     render();
-    // Any iOS viewport/font work deferred during the previous countdown is
-    // safe here: the new command is being spoken and its timer has not begun.
-    flushDeferredViewportWork();
     // Between successful actions the full ring has already been painted
     // while hidden by the expanded button, so leave it untouched. The
     // initial round still performs the normal short ring fade-in.
@@ -1712,6 +1710,9 @@
       if (state.gameState !== 'playing' || state.attempted || roundToken !== state.roundToken) return;
       startRingTimer();
     });
+    // Queue speech before servicing deferred viewport/font work so layout
+    // maintenance can never postpone the next spoken instruction.
+    flushDeferredViewportWork();
   }
 
   function handleFail() {
@@ -1745,20 +1746,27 @@
     }, 500);
   }
 
-  function animateButtonOverRing(onCovered, onDone) {
+  function animateButtonOverRing(onCovered, onHandoff, onSettled) {
     var growDuration = 420;
     var shrinkDuration = 380;
+    var handoffLead = 200;
     var covered = false;
-    var done = false;
+    var handedOff = false;
+    var settled = false;
     function coverOnce() {
       if (covered) return;
       covered = true;
       onCovered();
     }
-    function doneOnce() {
-      if (done) return;
-      done = true;
-      onDone();
+    function handoffOnce() {
+      if (handedOff) return;
+      handedOff = true;
+      onHandoff();
+    }
+    function settleOnce() {
+      if (settled) return;
+      settled = true;
+      if (typeof onSettled === 'function') onSettled();
     }
 
     // Split the motion into two animations so the ring reset is tied to
@@ -1778,16 +1786,48 @@
           { transform: 'scale(1)' }
         ], { duration: shrinkDuration, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'forwards' });
         grow.cancel();
-        shrink.finished.then(function () {
+        var shrinkFinished = false;
+        var shrinkWatchRaf = 0;
+
+        function finishShrink() {
+          if (shrinkFinished) return;
+          shrinkFinished = true;
+          if (shrinkWatchRaf) cancelAnimationFrame(shrinkWatchRaf);
+          handoffOnce();
+          settleOnce();
           shrink.cancel();
-          doneOnce();
-        }).catch(function () {
-          shrink.cancel();
-          doneOnce();
+        }
+
+        function watchShrinkEnd() {
+          if (shrinkFinished) return;
+          var currentTime = Number(shrink.currentTime);
+          if (shrink.playState === 'finished' ||
+              (isFinite(currentTime) && currentTime >= shrinkDuration)) {
+            finishShrink();
+            return;
+          }
+          // Reveal and speak the next action during the final 200ms while
+          // leaving the shrink animation itself completely uninterrupted.
+          if (isFinite(currentTime) && currentTime >= shrinkDuration - handoffLead) {
+            handoffOnce();
+          }
+          shrinkWatchRaf = requestAnimationFrame(watchShrinkEnd);
+        }
+
+        shrinkWatchRaf = requestAnimationFrame(watchShrinkEnd);
+        // Safety fallback for engines whose animation timeline does not
+        // expose an exact numeric final frame.
+        shrink.finished.then(finishShrink).catch(function () {
+          if (shrinkFinished) return;
+          if (shrinkWatchRaf) cancelAnimationFrame(shrinkWatchRaf);
+          shrinkFinished = true;
+          handoffOnce();
+          settleOnce();
         });
       }).catch(function () {
         coverOnce();
-        doneOnce();
+        handoffOnce();
+        settleOnce();
       });
       return;
     }
@@ -1796,7 +1836,8 @@
     // immediately shrinks, with no enlarged plateau.
     el.confirmBtn.classList.add('success');
     setTimeout(coverOnce, growDuration);
-    setTimeout(doneOnce, growDuration + shrinkDuration);
+    setTimeout(handoffOnce, growDuration + shrinkDuration - handoffLead);
+    setTimeout(settleOnce, growDuration + shrinkDuration);
   }
 
   function pulseReadout(target, animationKey) {
@@ -1825,8 +1866,9 @@
 
   function handleConfirm(origin) {
     if (state.gameState !== 'playing') return;
-    if (state.attempted) return;
+    if (state.attempted || state.buttonSettling) return;
     state.attempted = true;
+    state.buttonSettling = true;
     var completedAction = state.currentAction;
     var pressOrigin = origin && isFinite(origin.clientX) && isFinite(origin.clientY) ? {
       clientX: origin.clientX,
@@ -1868,17 +1910,20 @@
       // This draw happens only after the button fully covers the timer.
       drawTimerRing(1, '#35E892', 1);
     }, function () {
+      // Start the next instruction and its speech 200ms before the button
+      // reaches its final shrink frame. The countdown still waits for speech.
+      nextRound(ns, true);
+    }, function () {
+      state.buttonSettling = false;
       el.confirmBtn.classList.remove('success', 'pressed');
       el.ringSvg.classList.remove('pressed');
-      // The next action and speech begin after the shrink has revealed
-      // the already-full ring; its countdown still waits for speech end.
-      nextRound(ns, true);
     });
   }
 
   function startGame() {
     clearBackgroundGlows();
     clearTitleBlush();
+    state.buttonSettling = false;
     state.score = 0;
     state.speedMultiplier = 1;
     state.beatHighScore = false;
