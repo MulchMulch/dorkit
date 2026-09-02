@@ -439,13 +439,13 @@
   .dork-confirm.playing { cursor: pointer; }
   .dork-confirm.idle-bounce { animation: bounceIdle 1.8s ease-in-out infinite; }
   .dork-confirm.pressed { transform: none; }
-  .dork-confirm.success { animation: coverRing 0.45s cubic-bezier(.2,.8,.2,1); }
+  .dork-confirm.success { animation: coverRing 0.66s cubic-bezier(.2,.8,.2,1); }
   .dork-confirm.long-label { font-size: clamp(20px, 5.4vmin, 40px); overflow-wrap: anywhere; word-break: normal; }
   .dork-confirm.combo {
     box-shadow: 0 0 16px 7px rgba(255,215,0,0.52);
     animation: none;
   }
-  .dork-confirm.combo.success { animation: coverRing 0.45s cubic-bezier(.2,.8,.2,1); }
+  .dork-confirm.combo.success { animation: coverRing 0.66s cubic-bezier(.2,.8,.2,1); }
   .dork-confirm-label {
     display: inline-block;
     max-width: 100%;
@@ -495,17 +495,13 @@
     right: -1.15em; bottom: -0.42em;
     animation-delay: 0.13s;
   }
-  .combo-sparkle {
+  .combo-sparkle-canvas {
     position: absolute;
     left: 50%; top: 50%;
+    width: 320px; height: 240px;
+    transform: translate(-50%, -50%);
     z-index: -1;
     pointer-events: none;
-    line-height: 1;
-    -webkit-text-stroke: 0;
-    text-shadow: 0 0 7px currentColor, 0 0 13px rgba(255,217,61,0.8);
-    opacity: 0;
-    will-change: transform, opacity;
-    animation: comboSparkleBurst var(--spark-duration) cubic-bezier(.16,.8,.25,1) var(--spark-delay) forwards;
   }
 
   .version-indicator {
@@ -599,12 +595,6 @@
     62%  { transform: scale(0.82) rotate(22deg); opacity: 0.85; }
     100% { transform: scale(0.25) rotate(42deg); opacity: 0; }
   }
-  @keyframes comboSparkleBurst {
-    0%   { transform: translate(-50%, -50%) scale(0.1) rotate(0deg); opacity: 0; }
-    14%  { transform: translate(-50%, -50%) scale(1.35) rotate(35deg); opacity: 1; }
-    42%  { opacity: 1; }
-    100% { transform: translate(calc(-50% + var(--spark-x)), calc(-50% + var(--spark-y))) scale(0.18) rotate(var(--spark-spin)); opacity: 0; }
-  }
   @keyframes scorePulse {
     0%   { transform: scale(1); }
     45%  { transform: scale(1.13); }
@@ -616,7 +606,7 @@
 
 <div id="bgFill"></div>
 
-<div class="version-indicator" aria-hidden="true">v125</div>
+<div class="version-indicator" aria-hidden="true">v126</div>
 
 <div id="logoTile" aria-hidden="true">
   <svg xmlns="http://www.w3.org/2000/svg">
@@ -1052,41 +1042,119 @@
   }
 
   var activeComboMilestone = null;
+  // Allocate the single drawing surface before gameplay so the first 5-combo
+  // does not pay WebKit's canvas/context setup cost in the scoring frame.
+  var comboSparkleCanvas = document.createElement('canvas');
+  comboSparkleCanvas.className = 'combo-sparkle-canvas';
+  comboSparkleCanvas.setAttribute('aria-hidden', 'true');
+  var comboSparkleWidth = 320;
+  var comboSparkleHeight = 240;
+  var comboSparklePixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
+  comboSparkleCanvas.width = Math.round(comboSparkleWidth * comboSparklePixelRatio);
+  comboSparkleCanvas.height = Math.round(comboSparkleHeight * comboSparklePixelRatio);
+  var comboSparkleContext = comboSparkleCanvas.getContext('2d', { alpha: true, desynchronized: true });
+  if (comboSparkleContext) {
+    comboSparkleContext.setTransform(comboSparklePixelRatio, 0, 0, comboSparklePixelRatio, 0, 0);
+  }
+
+  function removeComboMilestone(popup) {
+    if (!popup) return;
+    if (popup._sparkleRaf) {
+      cancelAnimationFrame(popup._sparkleRaf);
+      popup._sparkleRaf = 0;
+    }
+    if (comboSparkleContext) {
+      comboSparkleContext.clearRect(0, 0, comboSparkleWidth, comboSparkleHeight);
+    }
+    if (popup.isConnected) popup.remove();
+    if (activeComboMilestone === popup) activeComboMilestone = null;
+  }
+
+  function startComboSparkles(popup) {
+    var context = comboSparkleContext;
+    if (!context) return;
+
+    var colors = ['#FFF8ED', '#FFD93D', '#FF5FA2'];
+    var particles = [];
+    var longestLife = 0;
+    for (var sparkleIndex = 0; sparkleIndex < 64; sparkleIndex++) {
+      var wave = sparkleIndex < 32 ? 0 : 1;
+      var angle = Math.PI * 2 * (sparkleIndex % 32) / 32 +
+        wave * 0.1 + (Math.random() - 0.5) * 0.2;
+      var distance = wave === 0 ?
+        (48 + Math.random() * 36) : (82 + Math.random() * 44);
+      var delay = wave * 90 + Math.random() * 55;
+      var duration = 500 + wave * 70 + Math.random() * 130;
+      longestLife = Math.max(longestLife, delay + duration);
+      particles.push({
+        angle: angle,
+        distance: distance,
+        delay: delay,
+        duration: duration,
+        size: 3.5 + Math.random() * 5,
+        color: colors[sparkleIndex % colors.length],
+        spin: (Math.random() - 0.5) * Math.PI * 1.7
+      });
+    }
+
+    var startTime = performance.now();
+    function drawComboSparkles(now) {
+      if (!popup.isConnected) {
+        popup._sparkleRaf = 0;
+        return;
+      }
+      var elapsed = now - startTime;
+      context.clearRect(0, 0, comboSparkleWidth, comboSparkleHeight);
+      for (var i = 0; i < particles.length; i++) {
+        var particle = particles[i];
+        var progress = (elapsed - particle.delay) / particle.duration;
+        if (progress < 0 || progress > 1) continue;
+        var travel = 1 - Math.pow(1 - progress, 3);
+        var alpha = progress < 0.14 ? progress / 0.14 :
+          Math.max(0, (1 - progress) / 0.58);
+        var x = comboSparkleWidth / 2 + Math.cos(particle.angle) * particle.distance * travel;
+        var y = comboSparkleHeight / 2 + Math.sin(particle.angle) * particle.distance * travel;
+        var size = particle.size * (0.35 + Math.sin(Math.min(1, progress * 1.8) * Math.PI / 2));
+        var rotation = particle.spin * progress;
+
+        context.save();
+        context.translate(x, y);
+        context.rotate(rotation);
+        context.globalAlpha = alpha;
+        context.fillStyle = particle.color;
+        context.beginPath();
+        context.moveTo(0, -size);
+        context.lineTo(size * 0.42, 0);
+        context.lineTo(0, size);
+        context.lineTo(-size * 0.42, 0);
+        context.closePath();
+        context.fill();
+        context.restore();
+      }
+      if (elapsed <= longestLife) {
+        popup._sparkleRaf = requestAnimationFrame(drawComboSparkles);
+      } else {
+        popup._sparkleRaf = 0;
+      }
+    }
+    popup._sparkleRaf = requestAnimationFrame(drawComboSparkles);
+  }
+
   function showComboMilestone(score) {
-    if (activeComboMilestone) activeComboMilestone.remove();
+    if (activeComboMilestone) removeComboMilestone(activeComboMilestone);
     var popup = document.createElement('div');
     popup.className = 'combo-milestone';
     popup.textContent = score + ' COMBO!';
-    var sparkleChars = ['✦', '✧', '★', '✶', '✹', '✦'];
-    var sparkleColors = ['#FFF8ED', '#FFD93D', '#FF5FA2'];
-    for (var sparkleIndex = 0; sparkleIndex < 64; sparkleIndex++) {
-      var sparkle = document.createElement('span');
-      var sparkleWave = sparkleIndex < 32 ? 0 : 1;
-      var sparkleAngle = Math.PI * 2 * (sparkleIndex % 32) / 32 +
-        (sparkleWave * 0.1) + (Math.random() - 0.5) * 0.2;
-      var sparkleDistance = sparkleWave === 0 ?
-        (48 + Math.random() * 36) : (82 + Math.random() * 44);
-      sparkle.className = 'combo-sparkle';
-      sparkle.textContent = sparkleChars[sparkleIndex % sparkleChars.length];
-      sparkle.style.color = sparkleColors[sparkleIndex % sparkleColors.length];
-      sparkle.style.fontSize = (0.4 + Math.random() * 0.48) + 'em';
-      sparkle.style.setProperty('--spark-x', (Math.cos(sparkleAngle) * sparkleDistance) + 'px');
-      sparkle.style.setProperty('--spark-y', (Math.sin(sparkleAngle) * sparkleDistance) + 'px');
-      sparkle.style.setProperty('--spark-spin', ((Math.random() - 0.5) * 300) + 'deg');
-      sparkle.style.setProperty('--spark-delay', Math.round(sparkleWave * 90 + Math.random() * 55) + 'ms');
-      sparkle.style.setProperty('--spark-duration', Math.round(500 + sparkleWave * 70 + Math.random() * 130) + 'ms');
-      popup.appendChild(sparkle);
-    }
+    popup.appendChild(comboSparkleCanvas);
     activeComboMilestone = popup;
     el.scoreBar.appendChild(popup);
+    startComboSparkles(popup);
     popup.addEventListener('animationend', function (event) {
       if (event.target !== popup || event.animationName !== 'comboMilestoneFade') return;
-      popup.remove();
-      if (activeComboMilestone === popup) activeComboMilestone = null;
+      removeComboMilestone(popup);
     });
     setTimeout(function () {
-      if (popup.isConnected) popup.remove();
-      if (activeComboMilestone === popup) activeComboMilestone = null;
+      removeComboMilestone(popup);
     }, 1150);
   }
 
@@ -1626,6 +1694,8 @@
   }
 
   function animateButtonOverRing(onCovered, onDone) {
+    var growDuration = 280;
+    var shrinkDuration = 380;
     var covered = false;
     var done = false;
     function coverOnce() {
@@ -1646,7 +1716,7 @@
       var grow = el.confirmBtn.animate([
         { transform: 'scale(1)' },
         { transform: 'scale(1.22)' }
-      ], { duration: 190, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' });
+      ], { duration: growDuration, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' });
       grow.finished.then(function () {
         coverOnce();
         // Begin shrinking in the same microtask as the grow completion.
@@ -1654,7 +1724,7 @@
         var shrink = el.confirmBtn.animate([
           { transform: 'scale(1.22)' },
           { transform: 'scale(1)' }
-        ], { duration: 260, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'forwards' });
+        ], { duration: shrinkDuration, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'forwards' });
         grow.cancel();
         shrink.finished.then(function () {
           shrink.cancel();
@@ -1673,8 +1743,8 @@
     // Fallback for older browsers: a single peak keyframe grows and then
     // immediately shrinks, with no enlarged plateau.
     el.confirmBtn.classList.add('success');
-    setTimeout(coverOnce, 190);
-    setTimeout(doneOnce, 450);
+    setTimeout(coverOnce, growDuration);
+    setTimeout(doneOnce, growDuration + shrinkDuration);
   }
 
   function pulseReadout(target, animationKey) {
