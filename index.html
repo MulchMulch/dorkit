@@ -652,6 +652,17 @@
     border-style: solid; border-width: var(--dork-border-w); border-color: transparent;
     z-index: 20;
   }
+  /* The opening note needs a little more breathing room than the game-over
+     panel. Because the START button's 16px bottom margin participates in
+     flex centering, a further 3px visual nudge centers the visible span from
+     the top of the note to the button's bottom edge (excluding its shadow). */
+  #idleOverlay {
+    padding: 10px calc(8% + 10px) 0;
+  }
+  #idleOverlay .dork-opening-letter,
+  #idleOverlay #startBtn {
+    top: 3px;
+  }
   /* This vector path supplies the stationary box's cream fill and visibly
      hand-drawn outline. It never participates in layout, so the existing
      morph measurements remain exact. */
@@ -766,7 +777,7 @@
 
 <div id="bgFill"></div>
 
-<div class="version-indicator" aria-hidden="true">v0.151</div>
+<div class="version-indicator" aria-hidden="true">v0.153</div>
 
 <div id="logoTile" aria-hidden="true">
   <svg xmlns="http://www.w3.org/2000/svg">
